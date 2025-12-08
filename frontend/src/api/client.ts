@@ -1,5 +1,5 @@
 import axios, { AxiosError } from 'axios';
-import type { ApiResponse, Draw, SearchResult, FrequencyStats, CoOccurrenceTriplet } from '../types';
+import type { ApiResponse, Draw, SearchResult, FrequencyStats, CoOccurrenceData } from '../types';
 import { API_CONFIG } from '../utils/constants';
 import { ApiError, handleApiError } from '../utils/errors';
 
@@ -220,12 +220,12 @@ export const analyticsApi = {
     days?: number;
     lottoType?: string;
     number?: number;
-  }): Promise<CoOccurrenceTriplet[]> => {
-    const response = await api.get<ApiResponse<CoOccurrenceTriplet[]>>('/analytics/cooccurrence', {
+  }): Promise<CoOccurrenceData[]> => {
+    const response = await api.get<ApiResponse<CoOccurrenceData[]>>('/analytics/cooccurrence', {
       params,
     });
     if (!response.data.success || !response.data.data) {
-      throw new ApiError(response.data.error || 'Failed to fetch co-occurrence triplets');
+      throw new ApiError(response.data.error || 'Failed to fetch co-occurrence data');
     }
     return response.data.data;
   },

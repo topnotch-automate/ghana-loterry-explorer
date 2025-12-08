@@ -1,5 +1,5 @@
 import pool from '../database/db.js';
-import type { FrequencyStats, AnalyticsTimeframe, CoOccurrenceTriplet } from '../types/index.js';
+import type { FrequencyStats, AnalyticsTimeframe, CoOccurrenceTriplet, CoOccurrencePair, CoOccurrenceData } from '../types/index.js';
 
 export class AnalyticsService {
   // Get frequency statistics for numbers
@@ -251,7 +251,93 @@ export class AnalyticsService {
     await pool.query(query, params);
   }
 
-  // Get co-occurrence triplets
+  // Calculate pairs on the fly (for fallback when triplets are insufficient)
+  async getCoOccurrencePairs(
+    limit: number = 50,
+    minCount: number = 1,
+    days?: number,
+    lottoType?: string
+  ): Promise<CoOccurrencePair[]> {
+    // Build WHERE clause
+    let whereClause = '';
+    const params: unknown[] = [];
+    let paramIndex = 1;
+
+    if (days || lottoType) {
+      const conditions: string[] = [];
+      if (days) {
+        conditions.push(`draw_date >= CURRENT_DATE - INTERVAL '${days} days'`);
+      }
+      if (lottoType) {
+        conditions.push(`lotto_type = $${paramIndex}`);
+        params.push(lottoType);
+        paramIndex++;
+      }
+      whereClause = 'WHERE ' + conditions.join(' AND ');
+    }
+
+    // Calculate pairs dynamically from draws
+    const query = `
+      WITH draw_data AS (
+        SELECT 
+          id,
+          draw_date,
+          winning_numbers,
+          machine_numbers
+        FROM draws
+        ${whereClause}
+      ),
+      expanded_numbers AS (
+        SELECT 
+          d.id,
+          d.draw_date,
+          num,
+          num = ANY(d.winning_numbers) AS is_winning,
+          num = ANY(d.machine_numbers) AS is_machine
+        FROM draw_data d
+        CROSS JOIN LATERAL unnest(d.winning_numbers || d.machine_numbers) AS num
+      ),
+      number_pairs AS (
+        SELECT DISTINCT
+          e1.id,
+          e1.draw_date,
+          LEAST(e1.num, e2.num) AS num1,
+          GREATEST(e1.num, e2.num) AS num2,
+          CASE WHEN e1.is_winning OR e2.is_winning THEN 1 ELSE 0 END AS in_winning,
+          CASE WHEN e1.is_machine OR e2.is_machine THEN 1 ELSE 0 END AS in_machine
+        FROM expanded_numbers e1
+        JOIN expanded_numbers e2 ON e1.id = e2.id AND e1.num < e2.num
+        WHERE e1.num BETWEEN 1 AND 90 AND e2.num BETWEEN 1 AND 90
+      )
+      SELECT 
+        num1 AS number1,
+        num2 AS number2,
+        COUNT(DISTINCT id) AS count,
+        COUNT(DISTINCT CASE WHEN in_winning > 0 THEN id END) AS winning_count,
+        COUNT(DISTINCT CASE WHEN in_machine > 0 THEN id END) AS machine_count,
+        MAX(draw_date) AS last_seen
+      FROM number_pairs
+      GROUP BY num1, num2
+      HAVING COUNT(DISTINCT id) >= $${paramIndex}
+      ORDER BY count DESC, num1 ASC, num2 ASC
+      LIMIT $${paramIndex + 1}
+    `;
+
+    params.push(minCount);
+    params.push(limit);
+
+    const result = await pool.query(query, params);
+    return result.rows.map((row) => ({
+      number1: parseInt(row.number1, 10),
+      number2: parseInt(row.number2, 10),
+      count: parseInt(row.count, 10),
+      winningCount: parseInt(row.winning_count, 10),
+      machineCount: parseInt(row.machine_count, 10),
+      lastSeen: row.last_seen,
+    }));
+  }
+
+  // Get co-occurrence triplets with fallback to pairs if insufficient
   async getCoOccurrenceTriplets(
     limit: number = 50,
     minCount: number = 1,
@@ -300,6 +386,37 @@ export class AnalyticsService {
       machineCount: parseInt(row.machine_count, 10),
       lastSeen: row.last_seen,
     }));
+  }
+
+  // Get co-occurrence data (triplets with fallback to pairs)
+  async getCoOccurrenceData(
+    limit: number = 50,
+    minCount: number = 1,
+    days?: number,
+    lottoType?: string,
+    minTriplets: number = 10 // Minimum number of triplets before falling back to pairs
+  ): Promise<CoOccurrenceData[]> {
+    // First, try to get triplets
+    const triplets = await this.getCoOccurrenceTriplets(limit, minCount, days, lottoType);
+
+    // If we have enough triplets, return them
+    if (triplets.length >= minTriplets) {
+      return triplets.map(t => ({ ...t, type: 'triplet' as const }));
+    }
+
+    // If we don't have enough triplets, get pairs as fallback
+    const pairs = await this.getCoOccurrencePairs(limit, minCount, days, lottoType);
+    
+    // Combine triplets (if any) with pairs
+    const result: CoOccurrenceData[] = [
+      ...triplets.map(t => ({ ...t, type: 'triplet' as const })),
+      ...pairs.map(p => ({ ...p, type: 'pair' as const }))
+    ];
+
+    // Sort by count descending and limit
+    return result
+      .sort((a, b) => b.count - a.count)
+      .slice(0, limit);
   }
 
   // Get co-occurrence triplets for a specific number

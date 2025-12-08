@@ -152,25 +152,27 @@ router.get('/cooccurrence', async (req, res, next) => {
       });
     }
 
-    let triplets;
+    let data;
     if (numberNum && !isNaN(numberNum)) {
-      // Get co-occurrence for a specific number
-      triplets = await analyticsService.getCoOccurrenceForNumber(
+      // Get co-occurrence for a specific number (triplets only for now)
+      const triplets = await analyticsService.getCoOccurrenceForNumber(
         numberNum,
         limitNum,
         daysNum
       );
+      data = triplets.map(t => ({ ...t, type: 'triplet' as const }));
     } else {
-      // Get top co-occurrence triplets
-      triplets = await analyticsService.getCoOccurrenceTriplets(
+      // Get top co-occurrence data (triplets with fallback to pairs)
+      data = await analyticsService.getCoOccurrenceData(
         limitNum,
         minCountNum,
         daysNum,
-        lottoType as string
+        lottoType as string,
+        10 // Minimum triplets before falling back to pairs
       );
     }
 
-    res.json({ success: true, data: triplets, count: triplets.length });
+    res.json({ success: true, data, count: data.length });
   } catch (error) {
     next(error);
   }

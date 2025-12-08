@@ -38,6 +38,20 @@ export interface CoOccurrenceTriplet {
   lastSeen?: string;
 }
 
+export interface CoOccurrencePair {
+  number1: number;
+  number2: number;
+  count: number;
+  winningCount: number;
+  machineCount: number;
+  lastSeen?: string;
+}
+
+// Union type for co-occurrence data (can be triplet or pair)
+export type CoOccurrenceData = 
+  | (CoOccurrenceTriplet & { type: 'triplet' })
+  | (CoOccurrencePair & { type: 'pair' });
+
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;
