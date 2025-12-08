@@ -14,7 +14,8 @@
     "migrate": "tsx src/scripts/migrate.ts",
     "migrate:dry-run": "tsx src/scripts/migrate.ts --dry-run",
     "diagnose": "tsx src/scripts/diagnose.ts",
-    "test-scraper": "tsx src/scripts/testScraperResponse.ts"
+    "test-scraper": "tsx src/scripts/testScraperResponse.ts",
+    "cleanup-dates": "tsx src/scripts/cleanupDuplicateDates.ts"
   },
   "dependencies": {
     "axios": "^1.6.2",

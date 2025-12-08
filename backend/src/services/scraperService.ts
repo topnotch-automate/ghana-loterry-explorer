@@ -1,6 +1,7 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { logger } from '../utils/logger.js';
+import { parseAndNormalizeDate } from '../utils/dateParser.js';
 import type { CreateDrawInput } from '../types/index.js';
 
 export interface ScrapedDraw {
@@ -367,53 +368,11 @@ export class ScraperService {
 
   /**
    * Parse date string to ISO format (YYYY-MM-DD)
-   * Supports formats: YYYY-MM-DD, d-M-yyyy (e.g., 5-12-2025), MM/DD/YYYY, MM-DD-YYYY
+   * Uses unified date parser to handle ambiguous formats consistently
    */
   private parseDate(dateStr: string): string {
-    if (!dateStr) return new Date().toISOString().split('T')[0];
-    
-    const trimmed = dateStr.trim();
-    
-    // Try ISO format first (YYYY-MM-DD)
-    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-      return trimmed;
-    }
-    
-    // Try d-M-yyyy format (e.g., "5-12-2025" -> "2025-12-05")
-    const dMyyyyMatch = trimmed.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-    if (dMyyyyMatch) {
-      const [, day, month, year] = dMyyyyMatch;
-      const paddedDay = day.padStart(2, '0');
-      const paddedMonth = month.padStart(2, '0');
-      return `${year}-${paddedMonth}-${paddedDay}`;
-    }
-    
-    // Try MM/DD/YYYY format
-    const mmddyyyyMatch = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-    if (mmddyyyyMatch) {
-      const [, month, day, year] = mmddyyyyMatch;
-      return `${year}-${month}-${day}`;
-    }
-    
-    // Try MM-DD-YYYY format
-    const mmddyyyyDashMatch = trimmed.match(/^(\d{2})-(\d{2})-(\d{4})$/);
-    if (mmddyyyyDashMatch) {
-      const [, month, day, year] = mmddyyyyDashMatch;
-      return `${year}-${month}-${day}`;
-    }
-    
-    // Try JavaScript Date parser as fallback
-    const date = new Date(trimmed);
-    if (!isNaN(date.getTime())) {
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    }
-    
-    // If all else fails, return today's date
-    logger.warn(`Could not parse date: ${dateStr}, using today's date`);
-    return new Date().toISOString().split('T')[0];
+    const { parseAndNormalizeDate } = await import('../utils/dateParser.js');
+    return parseAndNormalizeDate(dateStr);
   }
 
   /**

@@ -220,7 +220,8 @@ export class AnalyticsService {
     }
 
     // Calculate co-occurrence triplets from all draws
-    // For each draw, generate all triplets from winning and machine numbers
+    // IMPORTANT: All 3 numbers must be in the SAME panel (all winning OR all machine)
+    // If split across panels (e.g., 1 in winning, 2 in machine), it doesn't count as a triplet
     const query = `
       WITH draw_data AS (
         SELECT 
@@ -231,29 +232,41 @@ export class AnalyticsService {
         FROM draws
         ${whereClause}
       ),
-      expanded_numbers AS (
-        SELECT 
+      -- Generate triplets from winning numbers only (all 3 must be in winning)
+      winning_triplets AS (
+        SELECT DISTINCT
           d.id,
           d.draw_date,
-          num,
-          num = ANY(d.winning_numbers) AS is_winning,
-          num = ANY(d.machine_numbers) AS is_machine
+          LEAST(n1, n2, n3) AS num1,
+          n1 + n2 + n3 - LEAST(n1, n2, n3) - GREATEST(n1, n2, n3) AS num2,
+          GREATEST(n1, n2, n3) AS num3
         FROM draw_data d
-        CROSS JOIN LATERAL unnest(d.winning_numbers || d.machine_numbers) AS num
+        CROSS JOIN LATERAL unnest(d.winning_numbers) AS n1
+        CROSS JOIN LATERAL unnest(d.winning_numbers) AS n2
+        CROSS JOIN LATERAL unnest(d.winning_numbers) AS n3
+        WHERE n1 < n2 AND n2 < n3
+          AND n1 BETWEEN 1 AND 90 AND n2 BETWEEN 1 AND 90 AND n3 BETWEEN 1 AND 90
       ),
-      number_triplets AS (
+      -- Generate triplets from machine numbers only (all 3 must be in machine)
+      machine_triplets AS (
         SELECT DISTINCT
-          e1.id,
-          e1.draw_date,
-          LEAST(e1.num, e2.num, e3.num) AS num1,
-          e1.num + e2.num + e3.num - LEAST(e1.num, e2.num, e3.num) - GREATEST(e1.num, e2.num, e3.num) AS num2,
-          GREATEST(e1.num, e2.num, e3.num) AS num3,
-          CASE WHEN e1.is_winning OR e2.is_winning OR e3.is_winning THEN 1 ELSE 0 END AS in_winning,
-          CASE WHEN e1.is_machine OR e2.is_machine OR e3.is_machine THEN 1 ELSE 0 END AS in_machine
-        FROM expanded_numbers e1
-        JOIN expanded_numbers e2 ON e1.id = e2.id AND e1.num < e2.num
-        JOIN expanded_numbers e3 ON e1.id = e3.id AND e2.id = e3.id AND e2.num < e3.num
-        WHERE e1.num BETWEEN 1 AND 90 AND e2.num BETWEEN 1 AND 90 AND e3.num BETWEEN 1 AND 90
+          d.id,
+          d.draw_date,
+          LEAST(n1, n2, n3) AS num1,
+          n1 + n2 + n3 - LEAST(n1, n2, n3) - GREATEST(n1, n2, n3) AS num2,
+          GREATEST(n1, n2, n3) AS num3
+        FROM draw_data d
+        CROSS JOIN LATERAL unnest(d.machine_numbers) AS n1
+        CROSS JOIN LATERAL unnest(d.machine_numbers) AS n2
+        CROSS JOIN LATERAL unnest(d.machine_numbers) AS n3
+        WHERE n1 < n2 AND n2 < n3
+          AND n1 BETWEEN 1 AND 90 AND n2 BETWEEN 1 AND 90 AND n3 BETWEEN 1 AND 90
+      ),
+      -- Combine both, marking the source
+      all_triplets AS (
+        SELECT num1, num2, num3, id, draw_date, 'winning' AS source FROM winning_triplets
+        UNION ALL
+        SELECT num1, num2, num3, id, draw_date, 'machine' AS source FROM machine_triplets
       )
       INSERT INTO number_cooccurrence (number1, number2, number3, count, winning_count, machine_count, last_seen)
       SELECT 
@@ -261,10 +274,10 @@ export class AnalyticsService {
         num2,
         num3,
         COUNT(DISTINCT id) AS count,
-        COUNT(DISTINCT CASE WHEN in_winning > 0 THEN id END) AS winning_count,
-        COUNT(DISTINCT CASE WHEN in_machine > 0 THEN id END) AS machine_count,
+        COUNT(DISTINCT CASE WHEN source = 'winning' THEN id END) AS winning_count,
+        COUNT(DISTINCT CASE WHEN source = 'machine' THEN id END) AS machine_count,
         MAX(draw_date) AS last_seen
-      FROM number_triplets
+      FROM all_triplets
       GROUP BY num1, num2, num3
       ON CONFLICT (number1, number2, number3) 
       DO UPDATE SET
@@ -303,6 +316,8 @@ export class AnalyticsService {
     }
 
     // Calculate pairs dynamically from draws
+    // IMPORTANT: Both numbers must be in the SAME panel (both winning OR both machine)
+    // If split across panels (e.g., 1 in winning, 1 in machine), it doesn't count as a pair
     const query = `
       WITH draw_data AS (
         SELECT 
@@ -313,40 +328,51 @@ export class AnalyticsService {
         FROM draws
         ${whereClause}
       ),
-      expanded_numbers AS (
-        SELECT 
+      -- Generate pairs from winning numbers only (both must be in winning)
+      winning_pairs AS (
+        SELECT DISTINCT
           d.id,
           d.draw_date,
-          num,
-          num = ANY(d.winning_numbers) AS is_winning,
-          num = ANY(d.machine_numbers) AS is_machine
+          LEAST(n1, n2) AS num1,
+          GREATEST(n1, n2) AS num2
         FROM draw_data d
-        CROSS JOIN LATERAL unnest(d.winning_numbers || d.machine_numbers) AS num
+        CROSS JOIN LATERAL unnest(d.winning_numbers) AS n1
+        CROSS JOIN LATERAL unnest(d.winning_numbers) AS n2
+        WHERE n1 < n2
+          AND n1 BETWEEN 1 AND 90 AND n2 BETWEEN 1 AND 90
       ),
-      number_pairs AS (
+      -- Generate pairs from machine numbers only (both must be in machine)
+      machine_pairs AS (
         SELECT DISTINCT
-          e1.id,
-          e1.draw_date,
-          LEAST(e1.num, e2.num) AS num1,
-          GREATEST(e1.num, e2.num) AS num2,
-          CASE WHEN e1.is_winning OR e2.is_winning THEN 1 ELSE 0 END AS in_winning,
-          CASE WHEN e1.is_machine OR e2.is_machine THEN 1 ELSE 0 END AS in_machine
-        FROM expanded_numbers e1
-        JOIN expanded_numbers e2 ON e1.id = e2.id AND e1.num < e2.num
-        WHERE e1.num BETWEEN 1 AND 90 AND e2.num BETWEEN 1 AND 90
+          d.id,
+          d.draw_date,
+          LEAST(n1, n2) AS num1,
+          GREATEST(n1, n2) AS num2
+        FROM draw_data d
+        CROSS JOIN LATERAL unnest(d.machine_numbers) AS n1
+        CROSS JOIN LATERAL unnest(d.machine_numbers) AS n2
+        WHERE n1 < n2
+          AND n1 BETWEEN 1 AND 90 AND n2 BETWEEN 1 AND 90
+      ),
+      -- Combine both, marking the source
+      all_pairs AS (
+        SELECT num1, num2, id, draw_date, 'winning' AS source FROM winning_pairs
+        UNION ALL
+        SELECT num1, num2, id, draw_date, 'machine' AS source FROM machine_pairs
       )
       SELECT 
         num1 AS number1,
         num2 AS number2,
         COUNT(DISTINCT id) AS count,
-        COUNT(DISTINCT CASE WHEN in_winning > 0 THEN id END) AS winning_count,
-        COUNT(DISTINCT CASE WHEN in_machine > 0 THEN id END) AS machine_count,
+        COUNT(DISTINCT CASE WHEN source = 'winning' THEN id END) AS winning_count,
+        COUNT(DISTINCT CASE WHEN source = 'machine' THEN id END) AS machine_count,
         MAX(draw_date) AS last_seen
-      FROM number_pairs
+      FROM all_pairs
       GROUP BY num1, num2
       HAVING COUNT(DISTINCT id) >= $${paramIndex}
       ORDER BY 
-        CASE WHEN winning_count > 0 AND machine_count = 0 THEN 0 ELSE 1 END, -- Prioritize winning-only
+        CASE WHEN COUNT(DISTINCT CASE WHEN source = 'winning' THEN id END) > 0 
+             AND COUNT(DISTINCT CASE WHEN source = 'machine' THEN id END) = 0 THEN 0 ELSE 1 END, -- Prioritize winning-only
         count DESC, 
         num1 ASC, 
         num2 ASC

@@ -1,3 +1,4 @@
+import { parseAndNormalizeDate } from './dateParser.js';
 import type { CreateDrawInput } from '../types/index.js';
 
 export interface CSVParseResult {
@@ -144,13 +145,10 @@ function isValidDate(dateStr: string): boolean {
 }
 
 /**
- * Format date to YYYY-MM-DD
+ * Format date to YYYY-MM-DD using unified parser
+ * Handles ambiguous formats like 12/6/2025 vs 6/12/2025
  */
 function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return parseAndNormalizeDate(dateStr);
 }
 
