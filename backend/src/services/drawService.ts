@@ -1,4 +1,5 @@
 import pool from '../database/db.js';
+import { logger } from '../utils/logger.js';
 import type { Draw, CreateDrawInput, SearchQuery, SearchResult } from '../types/index.js';
 
 export class DrawService {
@@ -88,8 +89,11 @@ export class DrawService {
   // Batch insert draws (with conflict handling)
   async batchInsertDraws(inputs: CreateDrawInput[]): Promise<{ inserted: number; skipped: number; errors: number }> {
     if (inputs.length === 0) {
+      logger.warn('batchInsertDraws called with empty array');
       return { inserted: 0, skipped: 0, errors: 0 };
     }
+
+    logger.info(`Starting batch insert of ${inputs.length} draw(s)...`);
 
     let inserted = 0;
     let skipped = 0;
@@ -100,8 +104,10 @@ export class DrawService {
     
     try {
       await client.query('BEGIN');
+      logger.debug('Transaction started');
 
-      for (const input of inputs) {
+      for (let i = 0; i < inputs.length; i++) {
+        const input = inputs[i];
         try {
           // Use ON CONFLICT to skip duplicates
           const result = await client.query(
@@ -121,19 +127,24 @@ export class DrawService {
 
           if (result.rows.length > 0) {
             inserted++;
+            if (i < 3 || inserted <= 3) {
+              logger.debug(`Inserted draw: ${input.drawDate} ${input.lottoType}`);
+            }
           } else {
             skipped++;
           }
         } catch (error) {
           errors++;
           // Log error but continue with other inserts
-          console.error(`Error inserting draw ${input.drawDate} ${input.lottoType}:`, error);
+          logger.error(`Error inserting draw ${input.drawDate} ${input.lottoType}`, error);
         }
       }
 
       await client.query('COMMIT');
+      logger.info(`Batch insert completed: ${inserted} inserted, ${skipped} skipped, ${errors} errors`);
     } catch (error) {
       await client.query('ROLLBACK');
+      logger.error('Transaction rolled back due to error', error);
       throw error;
     } finally {
       client.release();

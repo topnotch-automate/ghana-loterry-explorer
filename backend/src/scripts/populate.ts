@@ -11,6 +11,8 @@
 import { scraperService } from '../services/scraperService.js';
 import { drawService } from '../services/drawService.js';
 import { logger } from '../utils/logger.js';
+// Import database to ensure connection pool is initialized
+import '../database/db.js';
 
 interface PopulateOptions {
   startPage?: number;
@@ -42,17 +44,45 @@ async function populateDatabase(options: PopulateOptions = {}): Promise<void> {
 
   try {
     logger.info('📥 Scraping draws from theb2b.com...');
+    logger.info(`   Start page: ${startPage}, Max pages: ${maxPages || 'unlimited'}`);
+    
     const allScrapedDraws = await scraperService.scrapeB2B(startPage, maxPages);
+
+    logger.info(`\n✅ Scraping completed. Found ${allScrapedDraws.length} draw(s)`);
 
     if (allScrapedDraws.length === 0) {
       logger.warn('⚠️  No draws found. Exiting.');
       return;
     }
 
-    logger.info(`\n📦 Processing ${allScrapedDraws.length} draw(s) in batches of ${batchSize}...`);
+    logger.info(`📦 Processing ${allScrapedDraws.length} draw(s) in batches of ${batchSize}...`);
 
     // Convert to CreateDrawInput format
-    const allDraws = allScrapedDraws.map((draw) => scraperService.toCreateDrawInput(draw));
+    const allDraws = allScrapedDraws.map((draw) => {
+      try {
+        return scraperService.toCreateDrawInput(draw);
+      } catch (error) {
+        logger.error(`Error converting draw to CreateDrawInput:`, { draw, error });
+        return null;
+      }
+    }).filter((draw): draw is NonNullable<typeof draw> => draw !== null);
+    
+    if (allDraws.length === 0) {
+      logger.warn('⚠️  No valid draws to insert after conversion. Exiting.');
+      return;
+    }
+
+    logger.info(`📋 Converted ${allDraws.length} draw(s) to database format (${allScrapedDraws.length - allDraws.length} failed conversion)`);
+
+    // Verify database connection before inserting
+    logger.info('🔌 Verifying database connection before insert...');
+    try {
+      await drawService.getDraws({ limit: 1 });
+      logger.info('✅ Database connection verified');
+    } catch (error) {
+      logger.error('❌ Database connection failed! Cannot insert draws.', error);
+      throw error;
+    }
 
     // Process in batches
     for (let i = 0; i < allDraws.length; i += batchSize) {
@@ -68,9 +98,24 @@ async function populateDatabase(options: PopulateOptions = {}): Promise<void> {
         totalSkipped += result.skipped;
         totalErrors += result.errors;
 
-        logger.info(`  ✅ Inserted: ${result.inserted}, Skipped (duplicates): ${result.skipped}, Errors: ${result.errors}`);
+        logger.info(`  ✅ Batch ${batchNum} complete: Inserted: ${result.inserted}, Skipped (duplicates): ${result.skipped}, Errors: ${result.errors}`);
+        
+        if (result.errors > 0) {
+          logger.warn(`  ⚠️  Batch ${batchNum} had ${result.errors} error(s)`);
+        }
+        
+        // Log sample of inserted draws for verification
+        if (result.inserted > 0 && batchNum === 1) {
+          logger.info(`  📝 Sample inserted draw: ${batch[0].drawDate} ${batch[0].lottoType}`);
+        }
       } catch (error) {
-        logger.error(`  ❌ Error inserting batch ${batchNum}`, error);
+        logger.error(`  ❌ Error inserting batch ${batchNum}:`, error);
+        if (error instanceof Error) {
+          logger.error(`  Error message: ${error.message}`);
+          if (error.stack) {
+            logger.error(`  Error stack: ${error.stack.substring(0, 500)}`);
+          }
+        }
         totalErrors += batch.length;
       }
     }
@@ -156,6 +201,7 @@ async function main(): Promise<void> {
     logger.info('✅ Database connection successful');
 
     await populateDatabase(options);
+    logger.info('✅ Script completed successfully');
     process.exit(0);
   } catch (error) {
     logger.error('❌ Failed to populate database', error);
@@ -163,8 +209,9 @@ async function main(): Promise<void> {
   }
 }
 
-// Run if executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main();
-}
+// Always run when script is executed
+main().catch((error) => {
+  logger.error('Unhandled error in populate script', error);
+  process.exit(1);
+});
 

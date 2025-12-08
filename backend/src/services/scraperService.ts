@@ -13,7 +13,7 @@ export interface ScrapedDraw {
 }
 
 export class ScraperService {
-  private readonly requestDelay = 1000; // 1 second delay between requests
+  private readonly requestDelay = 2000; // 2 second delay between requests (increased to avoid rate limiting)
   private readonly userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
   private readonly baseUrl = 'https://www.theb2blotto.com/ajax/get_latest_results.php';
   private readonly timeout = 30000; // 30 seconds
@@ -30,33 +30,105 @@ export class ScraperService {
    */
   private async fetchPage(page: number): Promise<string | null> {
     try {
-      const response = await axios.get(this.baseUrl, {
-        params: { pn: page },
+      // Construct URL with query parameter explicitly
+      const url = `${this.baseUrl}?pn=${page}`;
+      logger.info(`Fetching page ${page}: ${url}`);
+      
+      const response = await axios.get(url, {
         headers: {
           'User-Agent': this.userAgent,
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection': 'keep-alive',
+          'Referer': 'https://www.theb2blotto.com/',
+          'Origin': 'https://www.theb2blotto.com',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache',
         },
         timeout: this.timeout,
+        validateStatus: (status) => status < 500, // Don't throw on 4xx errors, we'll handle them
       });
-      return response.data;
+      
+      // Check response status
+      if (response.status !== 200) {
+        logger.warn(`Page ${page}: Received status ${response.status} ${response.statusText}`);
+        return null;
+      }
+
+      if (!response.data) {
+        logger.warn(`Page ${page}: Empty response received`);
+        return null;
+      }
+      
+      const htmlString = String(response.data);
+      logger.info(`Page ${page}: Received ${htmlString.length} characters, status: ${response.status}`);
+      
+      // Check if response looks like HTML
+      if (!htmlString.includes('<') || !htmlString.includes('>')) {
+        logger.warn(`Page ${page}: Response doesn't look like HTML. Preview: ${htmlString.substring(0, 200)}`);
+        return null;
+      }
+
+      // Check for common anti-bot indicators
+      if (htmlString.includes('captcha') || htmlString.includes('robot') || htmlString.includes('blocked') || 
+          htmlString.includes('access denied') || htmlString.toLowerCase().includes('cloudflare')) {
+        logger.error(`Page ${page}: Possible anti-bot protection detected in response`);
+        logger.debug(`Page ${page}: Response preview: ${htmlString.substring(0, 500)}`);
+        return null;
+      }
+
+      // Check if we have the expected table structure
+      if (!htmlString.includes('latestResults') && !htmlString.includes('<table') && !htmlString.includes('<tr')) {
+        logger.warn(`Page ${page}: Response doesn't contain expected table structure`);
+        logger.debug(`Page ${page}: Response preview: ${htmlString.substring(0, 500)}`);
+        return null;
+      }
+
+      logger.debug(`Page ${page}: Response preview (first 300 chars): ${htmlString.substring(0, 300)}`);
+      return htmlString;
     } catch (error) {
-      logger.error(`Failed to fetch page ${page}`, error);
+      if (axios.isAxiosError(error)) {
+        const actualUrl = error.config?.url || error.request?.responseURL || 'unknown';
+        logger.error(`Failed to fetch page ${page}`, {
+          message: error.message,
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          url: actualUrl,
+          requestedUrl: `${this.baseUrl}?pn=${page}`,
+        });
+      } else {
+        logger.error(`Failed to fetch page ${page}`, error);
+      }
       return null;
     }
   }
 
   /**
    * Parse a table row into a ScrapedDraw object
+   * HTML structure:
+   * <tr>
+   *   <td class="price"> - contains <span class="name">lottery type</span>
+   *   <td class="date"> - contains <span>date</span> (format: d-M-yyyy)
+   *   <td class="number"> - contains:
+   *     <ul class="lottery-number-list lottery-number-list2"> - winning numbers
+   *     <ul class="lottery-number-list lottery-number-list2 machine-numbers"> - machine numbers (optional)
    */
   private parseDrawRow(row: cheerio.Element, $: cheerio.CheerioAPI): ScrapedDraw | null {
     try {
-      const cols = $(row).find('td');
+      const $row = $(row);
+      
+      // Skip pagination rows (they have pagination elements)
+      if ($row.find('.pagination').length > 0) {
+        return null;
+      }
+
+      const cols = $row.find('td');
       if (cols.length < 3) {
         return null;
       }
 
-      // Extract lotto type
+      // Extract lotto type from first column
       const nameSpan = $(cols[0]).find('span.name');
       if (nameSpan.length === 0) {
         return null;
@@ -66,8 +138,9 @@ export class ScraperService {
         return null;
       }
 
-      // Extract draw date
-      const dateSpan = $(cols[1]).find('span.date');
+      // Extract draw date from second column (just <span>, not <span.date>)
+      const dateTd = $(cols[1]);
+      const dateSpan = dateTd.find('span').first();
       if (dateSpan.length === 0) {
         return null;
       }
@@ -76,40 +149,48 @@ export class ScraperService {
         return null;
       }
 
-      // Extract winning numbers
-      const winningUl = $(cols[2]).find('ul.lottery-number-list');
+      // Extract winning numbers from third column
+      // Winning numbers are in <ul class="lottery-number-list lottery-number-list2"> (without machine-numbers class)
+      const numberTd = $(cols[2]);
+      // Find ul with lottery-number-list but NOT machine-numbers (more explicit selector)
+      const winningUl = numberTd.find('ul.lottery-number-list:not(.machine-numbers)');
       const winningNumbers: number[] = [];
       if (winningUl.length > 0) {
         winningUl.find('li').each((_, li) => {
           const text = $(li).text().trim();
           if (text && /^\d+$/.test(text)) {
             const num = parseInt(text, 10);
-            if (!isNaN(num)) {
+            if (!isNaN(num) && num >= 1 && num <= 90) {
               winningNumbers.push(num);
             }
           }
         });
       }
 
-      // Extract machine numbers
-      const machineUl = $(cols[2]).find('ul.machine-numbers');
+      // Extract machine numbers from third column
+      // Machine numbers are in <ul class="lottery-number-list lottery-number-list2 machine-numbers">
+      const machineUl = numberTd.find('ul.machine-numbers');
       const machineNumbers: number[] = [];
       if (machineUl.length > 0) {
         machineUl.find('li').each((_, li) => {
           const text = $(li).text().trim();
           if (text && /^\d+$/.test(text)) {
             const num = parseInt(text, 10);
-            if (!isNaN(num)) {
+            if (!isNaN(num) && num >= 1 && num <= 90) {
               machineNumbers.push(num);
             }
           }
         });
       }
 
-      // Validate that we have meaningful data
-      if (winningNumbers.length === 0 && machineNumbers.length === 0) {
+      // Validate that we have meaningful data (at least winning numbers)
+      if (winningNumbers.length === 0) {
+        logger.debug(`Skipping row: No winning numbers found for ${lottoType} on ${drawDate}`);
         return null;
       }
+
+      // Some draws may not have machine numbers, which is okay
+      // But we need at least winning numbers
 
       return {
         drawDate: this.parseDate(drawDate),
@@ -136,14 +217,17 @@ export class ScraperService {
     const draws: ScrapedDraw[] = [];
     let page = startPage;
     let consecutiveEmptyPages = 0;
-    const maxEmptyPages = 3; // Stop after 3 consecutive empty pages
+    const maxEmptyPages = 5; // Stop after 3 consecutive empty pages
 
     logger.info(`Starting scrape from page ${startPage}...`);
 
     try {
       while (true) {
+        // Check maxPages limit at the start of each iteration
+        // If maxPages=3 and startPage=1, we want to process pages 1, 2, 3
+        // So we break when page > 1+3-1 = 3, meaning after processing page 3, page becomes 4, then we break
         if (maxPages && page > startPage + maxPages - 1) {
-          logger.info(`Reached maximum page limit (${maxPages}).`);
+          logger.info(`Reached maximum page limit (${maxPages} pages from page ${startPage}). Current page: ${page}`);
           break;
         }
 
@@ -156,18 +240,58 @@ export class ScraperService {
             logger.info('Too many consecutive errors. Stopping.');
             break;
           }
+          // Check maxPages before incrementing
+          // If we've already processed maxPages pages, stop
+          const pagesProcessed = page - startPage + 1;
+          if (maxPages && pagesProcessed >= maxPages) {
+            logger.info(`Reached maximum page limit (${maxPages} pages from page ${startPage}) after empty page. Current page: ${page}, Pages processed: ${pagesProcessed}`);
+            break;
+          }
           page++;
           await this.delay();
           continue;
         }
 
-        const $ = cheerio.load(html);
-        const rows = $('tr').toArray();
+        // The response is just raw <tr> elements, not wrapped in a table/tbody
+        // We need to wrap it in a container for cheerio to parse it properly
+        const wrappedHtml = `<table><tbody>${html}</tbody></table>`;
+        const $ = cheerio.load(wrappedHtml);
+        
+        // Now find all tr elements (they're direct children of tbody in our wrapped HTML)
+        let rows = $('tbody tr').toArray();
+        logger.debug(`Page ${page}: Found ${rows.length} row(s) in wrapped HTML`);
+
+        // Log HTML structure for debugging
+        if (rows.length === 0) {
+          const hasTr = html.includes('<tr');
+          const hasTd = html.includes('<td');
+          const hasName = html.includes('span class="name"') || html.includes("span class='name'");
+          logger.warn(`Page ${page}: No rows found. HTML structure check:`, {
+            hasTr,
+            hasTd,
+            hasName,
+            htmlLength: html.length,
+          });
+          
+          // Save a sample of the HTML for inspection
+          logger.debug(`Page ${page}: Full HTML (first 1000 chars): ${html.substring(0, 1000)}`);
+        }
+
+        logger.info(`Page ${page}: Found ${rows.length} table row(s) in HTML`);
 
         if (rows.length === 0) {
+          logger.warn(`Page ${page}: No table rows found in HTML`);
+          logger.debug(`Page ${page}: HTML preview: ${String(html).substring(0, 500)}`);
           consecutiveEmptyPages++;
           if (consecutiveEmptyPages >= maxEmptyPages) {
             logger.info('No more results found. Stopping.');
+            break;
+          }
+          // Check maxPages before incrementing
+          // If we've already processed maxPages pages, stop
+          const pagesProcessed = page - startPage + 1;
+          if (maxPages && pagesProcessed >= maxPages) {
+            logger.info(`Reached maximum page limit (${maxPages} pages from page ${startPage}) after empty page. Current page: ${page}, Pages processed: ${pagesProcessed}`);
             break;
           }
           page++;
@@ -179,18 +303,36 @@ export class ScraperService {
         consecutiveEmptyPages = 0;
 
         let pageDraws = 0;
+        let parseErrors = 0;
         for (const row of rows) {
           const draw = this.parseDrawRow(row, $);
           if (draw) {
             draws.push(draw);
             pageDraws++;
+          } else {
+            parseErrors++;
           }
+        }
+        
+        if (parseErrors > 0 && pageDraws === 0) {
+          logger.warn(`Page ${page}: Could not parse any draws from ${rows.length} row(s). This might indicate the HTML structure has changed.`);
         }
 
         if (pageDraws > 0) {
           logger.info(`  ✓ Found ${pageDraws} draw(s) on page ${page} (Total: ${draws.length})`);
         } else {
           logger.info(`  - No valid draws on page ${page} (Total: ${draws.length})`);
+        }
+
+        // Check maxPages before incrementing
+        // After processing page N, if N >= startPage + maxPages, we've processed enough pages
+        // For startPage=1, maxPages=3: after processing page 3, page=3, check 3 >= 1+3 = 4? No, continue
+        // Then page++ = 4, next iteration checks 4 > 1+3-1 = 3? Yes, break
+        // So we need to check: if we've processed maxPages pages already
+        const pagesProcessed = page - startPage + 1;
+        if (maxPages && pagesProcessed >= maxPages) {
+          logger.info(`Reached maximum page limit (${maxPages} pages from page ${startPage}) after processing page ${page}. Pages processed: ${pagesProcessed}`);
+          break;
         }
 
         page++;
@@ -224,41 +366,52 @@ export class ScraperService {
 
 
   /**
-   * Parse date string to ISO format
+   * Parse date string to ISO format (YYYY-MM-DD)
+   * Supports formats: YYYY-MM-DD, d-M-yyyy (e.g., 5-12-2025), MM/DD/YYYY, MM-DD-YYYY
    */
   private parseDate(dateStr: string): string {
     if (!dateStr) return new Date().toISOString().split('T')[0];
     
-    // Try various date formats
-    const date = new Date(dateStr);
+    const trimmed = dateStr.trim();
+    
+    // Try ISO format first (YYYY-MM-DD)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return trimmed;
+    }
+    
+    // Try d-M-yyyy format (e.g., "5-12-2025" -> "2025-12-05")
+    const dMyyyyMatch = trimmed.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+    if (dMyyyyMatch) {
+      const [, day, month, year] = dMyyyyMatch;
+      const paddedDay = day.padStart(2, '0');
+      const paddedMonth = month.padStart(2, '0');
+      return `${year}-${paddedMonth}-${paddedDay}`;
+    }
+    
+    // Try MM/DD/YYYY format
+    const mmddyyyyMatch = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (mmddyyyyMatch) {
+      const [, month, day, year] = mmddyyyyMatch;
+      return `${year}-${month}-${day}`;
+    }
+    
+    // Try MM-DD-YYYY format
+    const mmddyyyyDashMatch = trimmed.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+    if (mmddyyyyDashMatch) {
+      const [, month, day, year] = mmddyyyyDashMatch;
+      return `${year}-${month}-${day}`;
+    }
+    
+    // Try JavaScript Date parser as fallback
+    const date = new Date(trimmed);
     if (!isNaN(date.getTime())) {
-      return date.toISOString().split('T')[0];
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
     }
     
-    // Fallback: try common formats
-    const formats = [
-      /(\d{4})-(\d{2})-(\d{2})/, // YYYY-MM-DD
-      /(\d{2})\/(\d{2})\/(\d{4})/, // MM/DD/YYYY
-      /(\d{2})-(\d{2})-(\d{4})/, // MM-DD-YYYY
-    ];
-    
-    for (const format of formats) {
-      const match = dateStr.match(format);
-      if (match) {
-        if (format === formats[0]) {
-          return dateStr; // Already in YYYY-MM-DD
-        } else if (format === formats[1]) {
-          // MM/DD/YYYY
-          const [, month, day, year] = match;
-          return `${year}-${month}-${day}`;
-        } else if (format === formats[2]) {
-          // MM-DD-YYYY
-          const [, month, day, year] = match;
-          return `${year}-${month}-${day}`;
-        }
-      }
-    }
-    
+    // If all else fails, return today's date
     logger.warn(`Could not parse date: ${dateStr}, using today's date`);
     return new Date().toISOString().split('T')[0];
   }

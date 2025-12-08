@@ -1,0 +1,294 @@
+<div class="row">
+                            <div class="col-md-12">
+                                <div class="latest-winner-area table-responsive">
+                                    <table class="table">
+                                        <thead>
+                                            <tr>
+                                                <th class="date" style="width: 30%">Lottery Type</th>
+                                                <th class="date" style="width: 30%">Draw Date</th>
+                                                <th class="number">Drawn numbers</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="latestResults">                            <tr>
+                                <td class="price" style="width: 30%">
+                                                                    <span class="flag">
+                                            <img src="assets/images/5.png">
+                                    </span>
+                                                                    <span class="name">Friday Bonanza</span>
+                                </td>
+                                <td class="date" style="width: 30%">
+                                    <span>5-12-2025</span>
+                                </td>
+                                <td class="number">
+                                    <p class="mt-2">Win Numbers</p>
+                                    <ul class="lottery-number-list lottery-number-list2">
+                                        <li>10</li>
+                                        <li>57</li>
+                                        <li>9</li>
+                                        <li>40</li>
+                                        <li>50</li>
+                                    </ul>
+                                                                        <p class="mt-2">Machine Numbers</p>
+                                    <ul class="lottery-number-list lottery-number-list2 machine-numbers">
+                                        <li>54</li>
+                                        <li>5</li>
+                                        <li>69</li>
+                                        <li>38</li>
+                                        <li>80</li>
+                                    </ul>
+                                                                    </td>
+                            </tr>
+                                    <tr>
+                                <td class="price" style="width: 30%">
+                                                                    <span class="flag">
+                                            <img src="assets/images/nla-gl.png">
+                                    </span>
+                                                                    <span class="name">Noon Rush Friday</span>
+                                </td>
+                                <td class="date" style="width: 30%">
+                                    <span>5-12-2025</span>
+                                </td>
+                                <td class="number">
+                                    <p class="mt-2">Win Numbers</p>
+                                    <ul class="lottery-number-list lottery-number-list2">
+                                        <li>70</li>
+                                        <li>84</li>
+                                        <li>40</li>
+                                        <li>7</li>
+                                        <li>85</li>
+                                    </ul>
+                                                                    </td>
+                            </tr>
+                                    <tr>
+                                <td class="price" style="width: 30%">
+                                                                    <span class="flag">
+                                            <img src="assets/images/nla-gl.png">
+                                    </span>
+                                                                    <span class="name">NLA VAG Friday</span>
+                                </td>
+                                <td class="date" style="width: 30%">
+                                    <span>5-12-2025</span>
+                                </td>
+                                <td class="number">
+                                    <p class="mt-2">Win Numbers</p>
+                                    <ul class="lottery-number-list lottery-number-list2">
+                                        <li>19</li>
+                                        <li>89</li>
+                                        <li>11</li>
+                                        <li>7</li>
+                                        <li>15</li>
+                                    </ul>
+                                                                    </td>
+                            </tr>
+                                    <tr>
+                                <td class="price" style="width: 30%">
+                                                                    <span class="flag">
+                                            <img src="assets/images/nla-gl.png">
+                                    </span>
+                                                                    <span class="name">B2B Thursday</span>
+                                </td>
+                                <td class="date" style="width: 30%">
+                                    <span>4-12-2025</span>
+                                </td>
+                                <td class="number">
+                                    <p class="mt-2">Win Numbers</p>
+                                    <ul class="lottery-number-list lottery-number-list2">
+                                        <li>74</li>
+                                        <li>32</li>
+                                        <li>39</li>
+                                        <li>58</li>
+                                        <li>1</li>
+                                    </ul>
+                                                                        <p class="mt-2">Machine Numbers</p>
+                                    <ul class="lottery-number-list lottery-number-list2 machine-numbers">
+                                        <li>63</li>
+                                        <li>44</li>
+                                        <li>21</li>
+                                        <li>47</li>
+                                        <li>86</li>
+                                    </ul>
+                                                                    </td>
+                            </tr>
+                                    <tr>
+                                <td class="price" style="width: 30%">
+                                                                    <span class="flag">
+                                            <img src="assets/images/4.png">
+                                    </span>
+                                                                    <span class="name">Fortune Thursday</span>
+                                </td>
+                                <td class="date" style="width: 30%">
+                                    <span>4-12-2025</span>
+                                </td>
+                                <td class="number">
+                                    <p class="mt-2">Win Numbers</p>
+                                    <ul class="lottery-number-list lottery-number-list2">
+                                        <li>55</li>
+                                        <li>48</li>
+                                        <li>13</li>
+                                        <li>66</li>
+                                        <li>3</li>
+                                    </ul>
+                                                                        <p class="mt-2">Machine Numbers</p>
+                                    <ul class="lottery-number-list lottery-number-list2 machine-numbers">
+                                        <li>69</li>
+                                        <li>40</li>
+                                        <li>8</li>
+                                        <li>68</li>
+                                        <li>26</li>
+                                    </ul>
+                                                                    </td>
+                            </tr>
+                                    <tr>
+                                <td class="price" style="width: 30%">
+                                                                    <span class="flag">
+                                            <img src="assets/images/nla-gl.png">
+                                    </span>
+                                                                    <span class="name">Noon Rush Thursday</span>
+                                </td>
+                                <td class="date" style="width: 30%">
+                                    <span>4-12-2025</span>
+                                </td>
+                                <td class="number">
+                                    <p class="mt-2">Win Numbers</p>
+                                    <ul class="lottery-number-list lottery-number-list2">
+                                        <li>30</li>
+                                        <li>89</li>
+                                        <li>31</li>
+                                        <li>62</li>
+                                        <li>22</li>
+                                    </ul>
+                                                                        <p class="mt-2">Machine Numbers</p>
+                                    <ul class="lottery-number-list lottery-number-list2 machine-numbers">
+                                        <li>6</li>
+                                        <li>41</li>
+                                        <li>74</li>
+                                        <li>16</li>
+                                        <li>81</li>
+                                    </ul>
+                                                                    </td>
+                            </tr>
+                                    <tr>
+                                <td class="price" style="width: 30%">
+                                                                    <span class="flag">
+                                            <img src="assets/images/nla-gl.png">
+                                    </span>
+                                                                    <span class="name">NLA VAG Thursday</span>
+                                </td>
+                                <td class="date" style="width: 30%">
+                                    <span>4-12-2025</span>
+                                </td>
+                                <td class="number">
+                                    <p class="mt-2">Win Numbers</p>
+                                    <ul class="lottery-number-list lottery-number-list2">
+                                        <li>61</li>
+                                        <li>16</li>
+                                        <li>79</li>
+                                        <li>74</li>
+                                        <li>10</li>
+                                    </ul>
+                                                                    </td>
+                            </tr>
+                                    <tr>
+                                <td class="price" style="width: 30%">
+                                                                    <span class="flag">
+                                            <img src="assets/images/nla-gl.png">
+                                    </span>
+                                                                    <span class="name">B2B Wednesday</span>
+                                </td>
+                                <td class="date" style="width: 30%">
+                                    <span>3-12-2025</span>
+                                </td>
+                                <td class="number">
+                                    <p class="mt-2">Win Numbers</p>
+                                    <ul class="lottery-number-list lottery-number-list2">
+                                        <li>84</li>
+                                        <li>70</li>
+                                        <li>46</li>
+                                        <li>15</li>
+                                        <li>83</li>
+                                    </ul>
+                                                                        <p class="mt-2">Machine Numbers</p>
+                                    <ul class="lottery-number-list lottery-number-list2 machine-numbers">
+                                        <li>50</li>
+                                        <li>13</li>
+                                        <li>48</li>
+                                        <li>64</li>
+                                        <li>72</li>
+                                    </ul>
+                                                                    </td>
+                            </tr>
+                                    <tr>
+                                <td class="price" style="width: 30%">
+                                                                    <span class="flag">
+                                            <img src="assets/images/3.png">
+                                    </span>
+                                                                    <span class="name">Mid Week</span>
+                                </td>
+                                <td class="date" style="width: 30%">
+                                    <span>3-12-2025</span>
+                                </td>
+                                <td class="number">
+                                    <p class="mt-2">Win Numbers</p>
+                                    <ul class="lottery-number-list lottery-number-list2">
+                                        <li>89</li>
+                                        <li>22</li>
+                                        <li>67</li>
+                                        <li>62</li>
+                                        <li>53</li>
+                                    </ul>
+                                                                        <p class="mt-2">Machine Numbers</p>
+                                    <ul class="lottery-number-list lottery-number-list2 machine-numbers">
+                                        <li>56</li>
+                                        <li>28</li>
+                                        <li>68</li>
+                                        <li>15</li>
+                                        <li>69</li>
+                                    </ul>
+                                                                    </td>
+                            </tr>
+                                    <tr>
+                                <td class="price" style="width: 30%">
+                                                                    <span class="flag">
+                                            <img src="assets/images/nla-gl.png">
+                                    </span>
+                                                                    <span class="name">VAG West</span>
+                                </td>
+                                <td class="date" style="width: 30%">
+                                    <span>3-12-2025</span>
+                                </td>
+                                <td class="number">
+                                    <p class="mt-2">Win Numbers</p>
+                                    <ul class="lottery-number-list lottery-number-list2">
+                                        <li>55</li>
+                                        <li>2</li>
+                                        <li>54</li>
+                                        <li>80</li>
+                                        <li>12</li>
+                                    </ul>
+                                                                        <p class="mt-2">Machine Numbers</p>
+                                    <ul class="lottery-number-list lottery-number-list2 machine-numbers">
+                                        <li>27</li>
+                                        <li>68</li>
+                                        <li>22</li>
+                                        <li>51</li>
+                                        <li>49</li>
+                                    </ul>
+                                                                    </td>
+                            </tr>
+        
+                    <tr>
+                    <td class="price" style="width: 30%">
+                            <ul class="pagination float-right d-flex" style="padding-right: 10px">
+                                <li class="page-item"><a class="page-link" onclick="load_latest_results(1)"><i class="fa fa-angle-left"></i></a></li><li class="page-item"><a class="page-link" onclick="load_latest_results(1)">1</a></li><li class="page-item active"><a class="page-link">2</a></li><li class="page-item"><a class="page-link" onclick="load_latest_results(3)">3</a></li><li class="page-item"><a class="page-link" onclick="load_latest_results(3)"><i class="fa fa-arrow-right"></i></a></li>
+                            </ul>
+                    </td>
+                    <td class="date" style="width: 30%">
+                    </td>
+                    <td class="number">
+                    </td>
+                    </tr>
+            </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>

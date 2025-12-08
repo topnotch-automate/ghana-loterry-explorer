@@ -12,7 +12,9 @@
     "populate": "tsx src/scripts/populate.ts",
     "scrape:scheduled": "tsx src/scripts/scheduledScrape.ts",
     "migrate": "tsx src/scripts/migrate.ts",
-    "migrate:dry-run": "tsx src/scripts/migrate.ts --dry-run"
+    "migrate:dry-run": "tsx src/scripts/migrate.ts --dry-run",
+    "diagnose": "tsx src/scripts/diagnose.ts",
+    "test-scraper": "tsx src/scripts/testScraperResponse.ts"
   },
   "dependencies": {
     "axios": "^1.6.2",

@@ -28,7 +28,7 @@ async function testScrape(options: ScrapeOptions = {}): Promise<void> {
   }
 
   try {
-    const draws = await scraperService.scrapeB2B(startPage, maxPages);
+    const draws = await scraperService.scrapeB2B(startPage || 1, maxPages);
 
     logger.info(`\n✅ Found ${draws.length} draw(s):\n`);
     
@@ -109,13 +109,19 @@ Examples:
 
 // Main execution
 async function main(): Promise<void> {
-  const options = parseArgs();
-  await testScrape(options);
-  process.exit(0);
+  try {
+    const options = parseArgs();
+    await testScrape(options);
+    process.exit(0);
+  } catch (error) {
+    logger.error('Fatal error in scrape script', error);
+    process.exit(1);
+  }
 }
 
-// Run if executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main();
-}
+// Always run when script is executed
+main().catch((error) => {
+  logger.error('Unhandled error', error);
+  process.exit(1);
+});
 

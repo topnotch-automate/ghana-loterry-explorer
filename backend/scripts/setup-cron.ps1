@@ -63,7 +63,7 @@ try {
         -Settings $Settings `
         -Description $Description | Out-Null
     
-    Write-Host "✓ Scheduled task created successfully!" -ForegroundColor Green
+    Write-Host "[SUCCESS] Scheduled task created successfully!" -ForegroundColor Green
     Write-Host ""
     Write-Host "Task Name: $TaskName" -ForegroundColor Cyan
     Write-Host "Schedule: Daily at 2:00 AM" -ForegroundColor Cyan
@@ -71,8 +71,9 @@ try {
     Write-Host ""
     Write-Host "To view the task, run: Get-ScheduledTask -TaskName '$TaskName'" -ForegroundColor Yellow
     Write-Host "To remove the task, run: Unregister-ScheduledTask -TaskName '$TaskName' -Confirm:`$false" -ForegroundColor Yellow
-} catch {
-    Write-Host "Error creating scheduled task: $_" -ForegroundColor Red
+}
+catch {
+    $errorMessage = $_.Exception.Message
+    Write-Host "Error creating scheduled task: $errorMessage" -ForegroundColor Red
     exit 1
 }
-

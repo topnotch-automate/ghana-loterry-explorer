@@ -211,7 +211,7 @@ def scrape_all_pages(start_page: int = 1, delay: float = DEFAULT_DELAY, max_page
                 print(f"Reached maximum page limit ({max_pages}).")
                 break
 
-            print(f"Fetching page {page}...")
+            print(f"Fetching page {page}...on url {BASE_URL}")
             soup = fetch_page(page)
             
             if not soup:
