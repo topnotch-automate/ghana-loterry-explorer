@@ -5,7 +5,7 @@ import { CoOccurrenceMatrix } from '../components/CoOccurrenceMatrix';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { ErrorDisplay } from '../components/ErrorDisplay';
 import { handleApiError } from '../utils/errors';
-import type { FrequencyStats, CoOccurrencePair } from '../types';
+import type { FrequencyStats, CoOccurrenceTriplet } from '../types';
 
 export const Analytics: React.FC = () => {
   const [frequency30, setFrequency30] = useState<FrequencyStats[]>([]);
@@ -13,7 +13,7 @@ export const Analytics: React.FC = () => {
   const [hotNumbers, setHotNumbers] = useState<FrequencyStats[]>([]);
   const [coldNumbers, setColdNumbers] = useState<FrequencyStats[]>([]);
   const [sleepingNumbers, setSleepingNumbers] = useState<number[]>([]);
-  const [coOccurrencePairs, setCoOccurrencePairs] = useState<CoOccurrencePair[]>([]);
+  const [coOccurrenceTriplets, setCoOccurrenceTriplets] = useState<CoOccurrenceTriplet[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [timeframe, setTimeframe] = useState<'30' | '365'>('30');
@@ -51,12 +51,12 @@ export const Analytics: React.FC = () => {
   const loadCoOccurrence = async () => {
     try {
       setLoadingCoOccurrence(true);
-      const pairs = await analyticsApi.getCoOccurrence({
+      const triplets = await analyticsApi.getCoOccurrence({
         limit: 50,
         minCount: 2,
         days: timeframe === '30' ? 30 : 365,
       });
-      setCoOccurrencePairs(pairs);
+      setCoOccurrenceTriplets(triplets);
     } catch (err) {
       console.error('Error loading co-occurrence:', err);
       // Don't show error to user, just log it
@@ -262,8 +262,8 @@ export const Analytics: React.FC = () => {
           </div>
         ) : (
           <CoOccurrenceMatrix
-            data={coOccurrencePairs}
-            title={`Top Co-Occurring Number Pairs (Last ${timeframe} Days)`}
+            data={coOccurrenceTriplets}
+            title={`Top Co-Occurring Number Triplets (Last ${timeframe} Days)`}
             maxItems={50}
           />
         )}

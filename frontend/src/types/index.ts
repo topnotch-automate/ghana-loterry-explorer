@@ -28,9 +28,10 @@ export interface FrequencyStats {
   lastSeen?: string;
 }
 
-export interface CoOccurrencePair {
+export interface CoOccurrenceTriplet {
   number1: number;
   number2: number;
+  number3: number;
   count: number;
   winningCount: number;
   machineCount: number;

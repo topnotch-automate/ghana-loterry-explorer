@@ -1,5 +1,5 @@
 import axios, { AxiosError } from 'axios';
-import type { ApiResponse, Draw, SearchResult, FrequencyStats, CoOccurrencePair } from '../types';
+import type { ApiResponse, Draw, SearchResult, FrequencyStats, CoOccurrenceTriplet } from '../types';
 import { API_CONFIG } from '../utils/constants';
 import { ApiError, handleApiError } from '../utils/errors';
 
@@ -220,12 +220,12 @@ export const analyticsApi = {
     days?: number;
     lottoType?: string;
     number?: number;
-  }): Promise<CoOccurrencePair[]> => {
-    const response = await api.get<ApiResponse<CoOccurrencePair[]>>('/analytics/cooccurrence', {
+  }): Promise<CoOccurrenceTriplet[]> => {
+    const response = await api.get<ApiResponse<CoOccurrenceTriplet[]>>('/analytics/cooccurrence', {
       params,
     });
     if (!response.data.success || !response.data.data) {
-      throw new ApiError(response.data.error || 'Failed to fetch co-occurrence pairs');
+      throw new ApiError(response.data.error || 'Failed to fetch co-occurrence triplets');
     }
     return response.data.data;
   },
@@ -236,7 +236,7 @@ export const analyticsApi = {
   }): Promise<void> => {
     const response = await api.post<ApiResponse<void>>('/analytics/cooccurrence/update', params);
     if (!response.data.success) {
-      throw new ApiError(response.data.error || 'Failed to update co-occurrence pairs');
+      throw new ApiError(response.data.error || 'Failed to update co-occurrence triplets');
     }
   },
 };

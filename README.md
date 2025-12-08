@@ -237,7 +237,7 @@ The application uses PostgreSQL with the following main tables:
 
 - `draws` - Stores draw information (date, type, winning numbers, machine numbers)
 - `number_frequency` - Materialized view for fast frequency queries
-- `number_cooccurrence` - Tracks number pair occurrences
+- `number_cooccurrence` - Tracks number triplet occurrences (3 numbers appearing together)
 - `detected_patterns` - Stores detected patterns
 
 See `backend/src/database/schema.sql` for full schema.

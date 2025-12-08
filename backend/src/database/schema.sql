@@ -50,16 +50,25 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Co-occurrence tracking (optional, for advanced analytics)
+-- Tracks triplets (3 numbers) that appear together in draws
 CREATE TABLE IF NOT EXISTS number_cooccurrence (
   number1 INTEGER NOT NULL,
   number2 INTEGER NOT NULL,
+  number3 INTEGER NOT NULL,
   count INTEGER DEFAULT 0,
   winning_count INTEGER DEFAULT 0,
   machine_count INTEGER DEFAULT 0,
   last_seen DATE,
-  PRIMARY KEY (number1, number2),
-  CHECK (number1 < number2)
+  PRIMARY KEY (number1, number2, number3),
+  CHECK (number1 < number2 AND number2 < number3)
 );
+
+-- Indexes for better query performance
+CREATE INDEX IF NOT EXISTS idx_cooccurrence_number1 ON number_cooccurrence(number1);
+CREATE INDEX IF NOT EXISTS idx_cooccurrence_number2 ON number_cooccurrence(number2);
+CREATE INDEX IF NOT EXISTS idx_cooccurrence_number3 ON number_cooccurrence(number3);
+CREATE INDEX IF NOT EXISTS idx_cooccurrence_count ON number_cooccurrence(count DESC);
+CREATE INDEX IF NOT EXISTS idx_cooccurrence_last_seen ON number_cooccurrence(last_seen DESC);
 
 -- Pattern detection cache
 CREATE TABLE IF NOT EXISTS detected_patterns (

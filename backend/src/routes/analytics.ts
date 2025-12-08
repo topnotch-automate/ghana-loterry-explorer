@@ -122,7 +122,7 @@ router.get('/stats', async (req, res, next) => {
   }
 });
 
-// GET /api/analytics/cooccurrence - Get co-occurrence pairs
+// GET /api/analytics/cooccurrence - Get co-occurrence triplets
 router.get('/cooccurrence', async (req, res, next) => {
   try {
     const {
@@ -152,17 +152,17 @@ router.get('/cooccurrence', async (req, res, next) => {
       });
     }
 
-    let pairs;
+    let triplets;
     if (numberNum && !isNaN(numberNum)) {
       // Get co-occurrence for a specific number
-      pairs = await analyticsService.getCoOccurrenceForNumber(
+      triplets = await analyticsService.getCoOccurrenceForNumber(
         numberNum,
         limitNum,
         daysNum
       );
     } else {
-      // Get top co-occurrence pairs
-      pairs = await analyticsService.getCoOccurrencePairs(
+      // Get top co-occurrence triplets
+      triplets = await analyticsService.getCoOccurrenceTriplets(
         limitNum,
         minCountNum,
         daysNum,
@@ -170,7 +170,7 @@ router.get('/cooccurrence', async (req, res, next) => {
       );
     }
 
-    res.json({ success: true, data: pairs, count: pairs.length });
+    res.json({ success: true, data: triplets, count: triplets.length });
   } catch (error) {
     next(error);
   }
@@ -182,11 +182,11 @@ router.post('/cooccurrence/update', async (req, res, next) => {
     const { days, lottoType } = req.body;
     const daysNum = days ? parseInt(days as string, 10) : undefined;
 
-    await analyticsService.updateCoOccurrencePairs(daysNum, lottoType as string);
+    await analyticsService.updateCoOccurrenceTriplets(daysNum, lottoType as string);
 
     res.json({
       success: true,
-      message: 'Co-occurrence pairs updated successfully',
+      message: 'Co-occurrence triplets updated successfully',
     });
   } catch (error) {
     next(error);

@@ -1,5 +1,5 @@
 import pool from '../database/db.js';
-import type { FrequencyStats, AnalyticsTimeframe, CoOccurrencePair } from '../types/index.js';
+import type { FrequencyStats, AnalyticsTimeframe, CoOccurrenceTriplet } from '../types/index.js';
 
 export class AnalyticsService {
   // Get frequency statistics for numbers
@@ -173,8 +173,8 @@ export class AnalyticsService {
     };
   }
 
-  // Calculate and update co-occurrence pairs
-  async updateCoOccurrencePairs(days?: number, lottoType?: string): Promise<void> {
+  // Calculate and update co-occurrence triplets
+  async updateCoOccurrenceTriplets(days?: number, lottoType?: string): Promise<void> {
     // Build WHERE clause
     let whereClause = '';
     const params: unknown[] = [];
@@ -193,8 +193,8 @@ export class AnalyticsService {
       whereClause = 'WHERE ' + conditions.join(' AND ');
     }
 
-    // Calculate co-occurrence pairs from all draws
-    // For each draw, generate all pairs from winning and machine numbers
+    // Calculate co-occurrence triplets from all draws
+    // For each draw, generate all triplets from winning and machine numbers
     const query = `
       WITH draw_data AS (
         SELECT 
@@ -215,29 +215,32 @@ export class AnalyticsService {
         FROM draw_data d
         CROSS JOIN LATERAL unnest(d.winning_numbers || d.machine_numbers) AS num
       ),
-      number_pairs AS (
+      number_triplets AS (
         SELECT DISTINCT
           e1.id,
           e1.draw_date,
-          LEAST(e1.num, e2.num) AS num1,
-          GREATEST(e1.num, e2.num) AS num2,
-          CASE WHEN e1.is_winning OR e2.is_winning THEN 1 ELSE 0 END AS in_winning,
-          CASE WHEN e1.is_machine OR e2.is_machine THEN 1 ELSE 0 END AS in_machine
+          LEAST(e1.num, e2.num, e3.num) AS num1,
+          e1.num + e2.num + e3.num - LEAST(e1.num, e2.num, e3.num) - GREATEST(e1.num, e2.num, e3.num) AS num2,
+          GREATEST(e1.num, e2.num, e3.num) AS num3,
+          CASE WHEN e1.is_winning OR e2.is_winning OR e3.is_winning THEN 1 ELSE 0 END AS in_winning,
+          CASE WHEN e1.is_machine OR e2.is_machine OR e3.is_machine THEN 1 ELSE 0 END AS in_machine
         FROM expanded_numbers e1
         JOIN expanded_numbers e2 ON e1.id = e2.id AND e1.num < e2.num
-        WHERE e1.num BETWEEN 1 AND 90 AND e2.num BETWEEN 1 AND 90
+        JOIN expanded_numbers e3 ON e1.id = e3.id AND e2.id = e3.id AND e2.num < e3.num
+        WHERE e1.num BETWEEN 1 AND 90 AND e2.num BETWEEN 1 AND 90 AND e3.num BETWEEN 1 AND 90
       )
-      INSERT INTO number_cooccurrence (number1, number2, count, winning_count, machine_count, last_seen)
+      INSERT INTO number_cooccurrence (number1, number2, number3, count, winning_count, machine_count, last_seen)
       SELECT 
         num1,
         num2,
+        num3,
         COUNT(DISTINCT id) AS count,
         COUNT(DISTINCT CASE WHEN in_winning > 0 THEN id END) AS winning_count,
         COUNT(DISTINCT CASE WHEN in_machine > 0 THEN id END) AS machine_count,
         MAX(draw_date) AS last_seen
-      FROM number_pairs
-      GROUP BY num1, num2
-      ON CONFLICT (number1, number2) 
+      FROM number_triplets
+      GROUP BY num1, num2, num3
+      ON CONFLICT (number1, number2, number3) 
       DO UPDATE SET
         count = EXCLUDED.count,
         winning_count = EXCLUDED.winning_count,
@@ -248,13 +251,13 @@ export class AnalyticsService {
     await pool.query(query, params);
   }
 
-  // Get co-occurrence pairs
-  async getCoOccurrencePairs(
+  // Get co-occurrence triplets
+  async getCoOccurrenceTriplets(
     limit: number = 50,
     minCount: number = 1,
     days?: number,
     lottoType?: string
-  ): Promise<CoOccurrencePair[]> {
+  ): Promise<CoOccurrenceTriplet[]> {
     // Check if we have data, if not or if filtering, calculate it
     const checkQuery = 'SELECT COUNT(*) as count FROM number_cooccurrence';
     const checkResult = await pool.query(checkQuery);
@@ -262,13 +265,14 @@ export class AnalyticsService {
 
     // If no data exists or we're filtering, calculate/update
     if (existingCount === 0 || days || lottoType) {
-      await this.updateCoOccurrencePairs(days, lottoType);
+      await this.updateCoOccurrenceTriplets(days, lottoType);
     }
 
     let query = `
       SELECT 
         number1,
         number2,
+        number3,
         count,
         winning_count,
         machine_count,
@@ -283,13 +287,14 @@ export class AnalyticsService {
       query += ` AND last_seen >= CURRENT_DATE - INTERVAL '${days} days'`;
     }
 
-    query += ` ORDER BY count DESC, number1 ASC, number2 ASC LIMIT $${params.length + 1}`;
+    query += ` ORDER BY count DESC, number1 ASC, number2 ASC, number3 ASC LIMIT $${params.length + 1}`;
     params.push(limit);
 
     const result = await pool.query(query, params);
     return result.rows.map((row) => ({
       number1: parseInt(row.number1, 10),
       number2: parseInt(row.number2, 10),
+      number3: parseInt(row.number3, 10),
       count: parseInt(row.count, 10),
       winningCount: parseInt(row.winning_count, 10),
       machineCount: parseInt(row.machine_count, 10),
@@ -297,22 +302,23 @@ export class AnalyticsService {
     }));
   }
 
-  // Get co-occurrence pairs for a specific number
+  // Get co-occurrence triplets for a specific number
   async getCoOccurrenceForNumber(
     number: number,
     limit: number = 20,
     days?: number
-  ): Promise<CoOccurrencePair[]> {
+  ): Promise<CoOccurrenceTriplet[]> {
     let query = `
       SELECT 
         number1,
         number2,
+        number3,
         count,
         winning_count,
         machine_count,
         last_seen
       FROM number_cooccurrence
-      WHERE (number1 = $1 OR number2 = $1)
+      WHERE (number1 = $1 OR number2 = $1 OR number3 = $1)
     `;
 
     const params: unknown[] = [number];
@@ -328,6 +334,7 @@ export class AnalyticsService {
     return result.rows.map((row) => ({
       number1: parseInt(row.number1, 10),
       number2: parseInt(row.number2, 10),
+      number3: parseInt(row.number3, 10),
       count: parseInt(row.count, 10),
       winningCount: parseInt(row.winning_count, 10),
       machineCount: parseInt(row.machine_count, 10),
