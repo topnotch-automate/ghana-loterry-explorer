@@ -265,6 +265,8 @@ export const Analytics: React.FC = () => {
             data={coOccurrenceData}
             title={`Top Co-Occurring Numbers (Last ${timeframe} Days)`}
             maxItems={50}
+            days={parseInt(timeframe)}
+            lottoType={undefined}
           />
         )}
       </div>

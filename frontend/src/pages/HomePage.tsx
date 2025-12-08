@@ -117,6 +117,19 @@ export const HomePage: React.FC = () => {
           .sort((a, b) => (b.matchCount || 0) - (a.matchCount || 0));
   }, [parsedQuery, draws, matchMode, searchResults]);
 
+  // Pagination for homepage search results
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 9;
+  const totalPages = Math.ceil(results.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedResults = results.slice(startIndex, endIndex);
+
+  // Reset to page 1 when results change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [results.length]);
+
   if (loading && draws.length === 0) {
     return <LoadingSpinner message="Loading lottery data..." fullScreen />;
   }
@@ -190,16 +203,44 @@ export const HomePage: React.FC = () => {
             No results. Try adjusting your numbers or mode.
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {results.map((d) => (
-              <DrawCard
-                key={d.id}
-                draw={d}
-                queryNumbers={parsedQuery}
-                onClick={() => setSelectedDraw(d)}
-              />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {paginatedResults.map((d) => (
+                <DrawCard
+                  key={d.id}
+                  draw={d}
+                  queryNumbers={parsedQuery}
+                  onClick={() => setSelectedDraw(d)}
+                />
+              ))}
+            </div>
+            {totalPages > 1 && (
+              <div className="mt-6 flex items-center justify-between">
+                <div className="text-sm text-gray-600">
+                  Showing {startIndex + 1}-{Math.min(endIndex, results.length)} of {results.length} results
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-sm text-gray-700">
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 

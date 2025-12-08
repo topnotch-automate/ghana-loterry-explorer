@@ -239,6 +239,32 @@ export const analyticsApi = {
       throw new ApiError(response.data.error || 'Failed to update co-occurrence triplets');
     }
   },
+  getCoOccurrenceDates: async (params: {
+    number1: number;
+    number2: number;
+    number3?: number;
+    days?: number;
+    lottoType?: string;
+  }): Promise<string[]> => {
+    const searchParams = new URLSearchParams();
+    searchParams.append('number1', params.number1.toString());
+    searchParams.append('number2', params.number2.toString());
+    if (params.number3 !== undefined) {
+      searchParams.append('number3', params.number3.toString());
+    }
+    if (params.days) {
+      searchParams.append('days', params.days.toString());
+    }
+    if (params.lottoType) {
+      searchParams.append('lottoType', params.lottoType);
+    }
+    
+    const response = await api.get<ApiResponse<string[]>>(`/analytics/cooccurrence/dates?${searchParams.toString()}`);
+    if (!response.data.success) {
+      throw new ApiError(response.data.error || 'Failed to fetch co-occurrence dates');
+    }
+    return response.data.data || [];
+  },
 };
 
 export default api;

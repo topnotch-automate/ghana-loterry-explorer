@@ -82,68 +82,94 @@ export class AnalyticsService {
     }));
   }
 
-  // Get hot numbers (appearing more than average)
+  // Get hot numbers (appearing more than average) - ONLY from winning numbers
   async getHotNumbers(days: number = 30, lottoType?: string): Promise<FrequencyStats[]> {
+    // Get frequency stats but only for winning numbers
     const stats = await this.getFrequencyStats({ days }, lottoType);
     if (stats.length === 0) return [];
 
-    const avgCount = stats.reduce((sum, s) => sum + s.totalCount, 0) / stats.length;
-    return stats.filter((s) => s.totalCount > avgCount).slice(0, 10);
+    // Filter to only consider winning count, not total count
+    const winningStats = stats
+      .filter((s) => s.winningCount > 0)
+      .map((s) => ({ ...s, totalCount: s.winningCount })); // Use winningCount as the metric
+    
+    if (winningStats.length === 0) return [];
+
+    const avgCount = winningStats.reduce((sum, s) => sum + s.totalCount, 0) / winningStats.length;
+    return winningStats.filter((s) => s.totalCount > avgCount).slice(0, 10);
   }
 
-  // Get cold numbers (appearing less than average or not at all)
+  // Get cold numbers (appearing less than average or not at all) - ONLY from winning numbers
   async getColdNumbers(days: number = 30, lottoType?: string): Promise<FrequencyStats[]> {
+    // Get frequency stats but only for winning numbers
     const stats = await this.getFrequencyStats({ days }, lottoType);
     if (stats.length === 0) return [];
 
-    const avgCount = stats.reduce((sum, s) => sum + s.totalCount, 0) / stats.length;
-    return stats.filter((s) => s.totalCount < avgCount || s.totalCount === 0).slice(0, 10);
+    // Filter to only consider winning count, not total count
+    const winningStats = stats
+      .filter((s) => s.winningCount > 0)
+      .map((s) => ({ ...s, totalCount: s.winningCount })); // Use winningCount as the metric
+    
+    if (winningStats.length === 0) return [];
+
+    const avgCount = winningStats.reduce((sum, s) => sum + s.totalCount, 0) / winningStats.length;
+    return winningStats.filter((s) => s.totalCount < avgCount || s.totalCount === 0).slice(0, 10);
   }
 
   // Get sleeping numbers (not appeared in X days)
+  // Logic: All numbers 1-90 are "asleep" except those that appeared in winning OR machine within the timeframe
   async getSleepingNumbers(days: number = 30): Promise<number[]> {
-    // First, check if there are any draws in the period
-    const drawsCheckQuery = `
-      SELECT COUNT(*) as count
-      FROM draws
-      WHERE draw_date >= CURRENT_DATE - INTERVAL '${days} days'
-    `;
-    
-    const drawsCheck = await pool.query(drawsCheckQuery);
-    const drawCount = parseInt(drawsCheck.rows[0]?.count || '0', 10);
-    
-    // If no draws exist in the period, return empty array (not all numbers)
-    if (drawCount === 0) {
+    try {
+      // First, check if there are any draws in the period
+      const drawsCheckQuery = `
+        SELECT COUNT(*) as count
+        FROM draws
+        WHERE draw_date >= CURRENT_DATE - INTERVAL '${days} days'
+      `;
+      
+      const drawsCheck = await pool.query(drawsCheckQuery);
+      const drawCount = parseInt(drawsCheck.rows[0]?.count || '0', 10);
+      
+      // If no draws exist in the period, return empty array (not all numbers)
+      if (drawCount === 0) {
+        return [];
+      }
+      
+      // Get all numbers that HAVE appeared in winning OR machine in the last X days
+      // Use a simpler approach: get distinct numbers from both arrays
+      const appearedQuery = `
+        WITH all_numbers AS (
+          SELECT DISTINCT num
+          FROM (
+            SELECT unnest(winning_numbers) AS num
+            FROM draws
+            WHERE draw_date >= CURRENT_DATE - INTERVAL '${days} days'
+            UNION
+            SELECT unnest(machine_numbers) AS num
+            FROM draws
+            WHERE draw_date >= CURRENT_DATE - INTERVAL '${days} days'
+          ) AS combined
+          WHERE num BETWEEN 1 AND 90
+        )
+        SELECT num FROM all_numbers
+        ORDER BY num
+      `;
+      
+      const appearedResult = await pool.query(appearedQuery);
+      
+      const appearedNumbers = new Set(
+        appearedResult.rows.map((row) => parseInt(row.num, 10))
+      );
+      
+      // Return all numbers 1-90 that have NOT appeared (these are "sleeping")
+      const allNumbers = Array.from({ length: 90 }, (_, i) => i + 1);
+      const sleeping = allNumbers.filter((num) => !appearedNumbers.has(num));
+      
+      return sleeping;
+    } catch (error) {
+      console.error('Error getting sleeping numbers:', error);
       return [];
     }
-    
-    // Get all numbers that HAVE appeared in the last X days
-    const appearedQuery = `
-      SELECT DISTINCT unnest(winning_numbers || machine_numbers) AS num
-      FROM draws
-      WHERE draw_date >= CURRENT_DATE - INTERVAL '${days} days'
-    `;
-    
-    const appearedResult = await pool.query(appearedQuery);
-    
-    const appearedNumbers = new Set(
-      appearedResult.rows
-        .map((row) => {
-          const num = parseInt(row.num, 10);
-          return !isNaN(num) && num >= 1 && num <= 90 ? num : null;
-        })
-        .filter((n): n is number => n !== null)
-    );
-
-    // Return numbers 1-90 that are NOT in the appeared set
-    const sleeping: number[] = [];
-    for (let i = 1; i <= 90; i++) {
-      if (!appearedNumbers.has(i)) {
-        sleeping.push(i);
-      }
-    }
-
-    return sleeping;
   }
 
   // Get total draw count
@@ -319,7 +345,11 @@ export class AnalyticsService {
       FROM number_pairs
       GROUP BY num1, num2
       HAVING COUNT(DISTINCT id) >= $${paramIndex}
-      ORDER BY count DESC, num1 ASC, num2 ASC
+      ORDER BY 
+        CASE WHEN winning_count > 0 AND machine_count = 0 THEN 0 ELSE 1 END, -- Prioritize winning-only
+        count DESC, 
+        num1 ASC, 
+        num2 ASC
       LIMIT $${paramIndex + 1}
     `;
 
@@ -335,6 +365,61 @@ export class AnalyticsService {
       machineCount: parseInt(row.machine_count, 10),
       lastSeen: row.last_seen,
     }));
+  }
+
+  // Get all draw dates where a specific co-occurrence pair/triplet appeared
+  async getCoOccurrenceDrawDates(
+    number1: number,
+    number2: number,
+    number3?: number,
+    days?: number,
+    lottoType?: string
+  ): Promise<string[]> {
+    let whereClause = '';
+    const params: unknown[] = [number1, number2];
+    let paramIndex = 3;
+
+    if (days || lottoType) {
+      const conditions: string[] = [];
+      if (days) {
+        conditions.push(`draw_date >= CURRENT_DATE - INTERVAL '${days} days'`);
+      }
+      if (lottoType) {
+        conditions.push(`lotto_type = $${paramIndex}`);
+        params.push(lottoType);
+        paramIndex++;
+      }
+      whereClause = 'AND ' + conditions.join(' AND ');
+    }
+
+    if (number3 !== undefined) {
+      // Triplet query
+      const query = `
+        SELECT DISTINCT draw_date
+        FROM draws
+        WHERE $1 = ANY(winning_numbers || machine_numbers)
+          AND $2 = ANY(winning_numbers || machine_numbers)
+          AND $${paramIndex} = ANY(winning_numbers || machine_numbers)
+          ${whereClause}
+        ORDER BY draw_date DESC
+      `;
+      params.push(number3);
+      paramIndex++;
+      const result = await pool.query(query, params);
+      return result.rows.map((row) => row.draw_date);
+    } else {
+      // Pair query
+      const query = `
+        SELECT DISTINCT draw_date
+        FROM draws
+        WHERE $1 = ANY(winning_numbers || machine_numbers)
+          AND $2 = ANY(winning_numbers || machine_numbers)
+          ${whereClause}
+        ORDER BY draw_date DESC
+      `;
+      const result = await pool.query(query, params);
+      return result.rows.map((row) => row.draw_date);
+    }
   }
 
   // Get co-occurrence triplets with fallback to pairs if insufficient
@@ -373,7 +458,13 @@ export class AnalyticsService {
       query += ` AND last_seen >= CURRENT_DATE - INTERVAL '${days} days'`;
     }
 
-    query += ` ORDER BY count DESC, number1 ASC, number2 ASC, number3 ASC LIMIT $${params.length + 1}`;
+    query += ` ORDER BY 
+      CASE WHEN winning_count > 0 AND machine_count = 0 THEN 0 ELSE 1 END,
+      count DESC, 
+      number1 ASC, 
+      number2 ASC, 
+      number3 ASC 
+      LIMIT $${params.length + 1}`;
     params.push(limit);
 
     const result = await pool.query(query, params);

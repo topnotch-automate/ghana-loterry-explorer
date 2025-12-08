@@ -217,11 +217,13 @@ export class DrawService {
       paramIndex++;
     } else if (mode === 'group') {
       // Group search: at least 2 numbers from the group must appear together
-      // Numbers can be in winning, machine, or both panels
+      // Numbers must be in winning panel OR machine panel, but NOT across both
       const groupMinMatches = Math.max(2, minMatches); // At least 2, or use minMatches if higher
       sqlQuery += ` AND (
-        SELECT COUNT(*) FROM unnest(d.winning_numbers || d.machine_numbers) AS num WHERE num = ANY($1)
-      ) >= $${paramIndex}`;
+        (SELECT COUNT(*) FROM unnest(d.winning_numbers) AS num WHERE num = ANY($1)) >= $${paramIndex}
+        OR
+        (SELECT COUNT(*) FROM unnest(d.machine_numbers) AS num WHERE num = ANY($1)) >= $${paramIndex}
+      )`;
       params.push(groupMinMatches);
       paramIndex++;
     } else if (mode === 'winning-only') {
@@ -245,15 +247,33 @@ export class DrawService {
       paramIndex++;
     }
 
-    sqlQuery += ' ORDER BY match_count_all DESC, d.draw_date DESC';
+    // Order by appropriate match count based on mode
+    if (mode === 'winning-only') {
+      sqlQuery += ' ORDER BY match_count_winning DESC, d.draw_date DESC';
+    } else if (mode === 'machine-only') {
+      sqlQuery += ' ORDER BY match_count_machine DESC, d.draw_date DESC';
+    } else {
+      sqlQuery += ' ORDER BY match_count_all DESC, d.draw_date DESC';
+    }
 
     const result = await pool.query(sqlQuery, params);
-    return result.rows.map((row) => ({
-      ...this.mapRowToDraw(row),
-      matchCount: parseInt(row.match_count_all, 10),
-      matchCountWinning: parseInt(row.match_count_winning, 10),
-      matchCountMachine: parseInt(row.match_count_machine, 10),
-    }));
+    return result.rows.map((row) => {
+      const draw = this.mapRowToDraw(row);
+      // Set matchCount based on mode
+      let matchCount = parseInt(row.match_count_all, 10);
+      if (mode === 'winning-only') {
+        matchCount = parseInt(row.match_count_winning, 10);
+      } else if (mode === 'machine-only') {
+        matchCount = parseInt(row.match_count_machine, 10);
+      }
+      
+      return {
+        ...draw,
+        matchCount,
+        matchCountWinning: parseInt(row.match_count_winning, 10),
+        matchCountMachine: parseInt(row.match_count_machine, 10),
+      };
+    });
   }
 
   // Get latest draw
@@ -288,14 +308,10 @@ export class DrawService {
     const allTargetNumbers = [...targetDraw.winningNumbers, ...targetDraw.machineNumbers];
 
     // Find draws with overlapping numbers, excluding the target draw
+    // Show separate matches for winning and machine, don't combine
     const sqlQuery = `
       SELECT 
         d.*,
-        (
-          SELECT COUNT(*) 
-          FROM unnest(d.winning_numbers || d.machine_numbers) AS num 
-          WHERE num = ANY($1)
-        ) AS match_count_all,
         (
           SELECT COUNT(*) 
           FROM unnest(d.winning_numbers) AS num 
@@ -309,11 +325,16 @@ export class DrawService {
       FROM draws d
       WHERE d.id != $2
         AND (
-          SELECT COUNT(*) 
-          FROM unnest(d.winning_numbers || d.machine_numbers) AS num 
-          WHERE num = ANY($1)
-        ) >= $3
-      ORDER BY match_count_all DESC, d.draw_date DESC
+          (SELECT COUNT(*) FROM unnest(d.winning_numbers) AS num WHERE num = ANY($1)) >= $3
+          OR
+          (SELECT COUNT(*) FROM unnest(d.machine_numbers) AS num WHERE num = ANY($1)) >= $3
+        )
+      ORDER BY 
+        GREATEST(
+          (SELECT COUNT(*) FROM unnest(d.winning_numbers) AS num WHERE num = ANY($1)),
+          (SELECT COUNT(*) FROM unnest(d.machine_numbers) AS num WHERE num = ANY($1))
+        ) DESC,
+        d.draw_date DESC
       LIMIT $4
     `;
 
@@ -324,12 +345,19 @@ export class DrawService {
       limit,
     ]);
 
-    return result.rows.map((row) => ({
-      ...this.mapRowToDraw(row),
-      matchCount: parseInt(row.match_count_all, 10),
-      matchCountWinning: parseInt(row.match_count_winning, 10),
-      matchCountMachine: parseInt(row.match_count_machine, 10),
-    }));
+    return result.rows.map((row) => {
+      const winningMatches = parseInt(row.match_count_winning, 10);
+      const machineMatches = parseInt(row.match_count_machine, 10);
+      // Use the higher of the two match counts for display
+      const maxMatches = Math.max(winningMatches, machineMatches);
+      
+      return {
+        ...this.mapRowToDraw(row),
+        matchCount: maxMatches, // For backward compatibility
+        matchCountWinning: winningMatches,
+        matchCountMachine: machineMatches,
+      };
+    });
   }
 
   // Helper: Map database row to Draw type

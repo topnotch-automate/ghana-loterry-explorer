@@ -114,39 +114,82 @@ export const DrawModal: React.FC<DrawModalProps> = ({ draw, onClose }) => {
             </div>
           ) : similarDraws.length > 0 ? (
             <div className="space-y-3">
-              {similarDraws.map((similarDraw) => (
-                <div
-                  key={similarDraw.id}
-                  className="p-3 border rounded-lg hover:shadow-md transition-shadow"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <div className="text-sm text-gray-500">{formatDate(similarDraw.drawDate)}</div>
-                      <div className="text-xs text-gray-400">{similarDraw.lottoType}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-xs text-gray-500">Matches</div>
-                      <div className="text-lg font-bold text-primary-600">
-                        {similarDraw.matchCount || 0}
+              {similarDraws.map((similarDraw) => {
+                const winningMatches = similarDraw.matchCountWinning || 0;
+                const machineMatches = similarDraw.matchCountMachine || 0;
+                const hasWinningMatches = winningMatches > 0;
+                const hasMachineMatches = machineMatches > 0;
+                
+                return (
+                  <div
+                    key={similarDraw.id}
+                    className="p-3 border rounded-lg hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <div className="text-sm text-gray-500">{formatDate(similarDraw.drawDate)}</div>
+                        <div className="text-xs text-gray-400">{similarDraw.lottoType}</div>
+                      </div>
+                      <div className="text-right">
+                        {hasWinningMatches && (
+                          <div className="mb-1">
+                            <div className="text-xs text-gray-500">Winning Matches</div>
+                            <div className="text-lg font-bold text-green-600">
+                              {winningMatches}
+                            </div>
+                          </div>
+                        )}
+                        {hasMachineMatches && (
+                          <div>
+                            <div className="text-xs text-gray-500">Machine Matches</div>
+                            <div className="text-lg font-bold text-blue-600">
+                              {machineMatches}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {[...similarDraw.winningNumbers, ...similarDraw.machineNumbers].map((num, i) => (
-                      <div
-                        key={i}
-                        className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                          [...draw.winningNumbers, ...draw.machineNumbers].includes(num)
-                            ? 'bg-yellow-200 text-yellow-900'
-                            : 'bg-gray-100 text-gray-700'
-                        }`}
-                      >
-                        {num}
+                    {hasWinningMatches && (
+                      <div className="mb-2">
+                        <div className="text-xs text-gray-500 mb-1">Winning Numbers:</div>
+                        <div className="flex flex-wrap gap-1">
+                          {similarDraw.winningNumbers.map((num, i) => (
+                            <div
+                              key={`win-${i}`}
+                              className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                                draw.winningNumbers.includes(num) || draw.machineNumbers.includes(num)
+                                  ? 'bg-yellow-200 text-yellow-900'
+                                  : 'bg-green-100 text-green-700'
+                              }`}
+                            >
+                              {num}
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    ))}
+                    )}
+                    {hasMachineMatches && (
+                      <div>
+                        <div className="text-xs text-gray-500 mb-1">Machine Numbers:</div>
+                        <div className="flex flex-wrap gap-1">
+                          {similarDraw.machineNumbers.map((num, i) => (
+                            <div
+                              key={`mac-${i}`}
+                              className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                                draw.winningNumbers.includes(num) || draw.machineNumbers.includes(num)
+                                  ? 'bg-yellow-200 text-yellow-900'
+                                  : 'bg-blue-100 text-blue-700'
+                              }`}
+                            >
+                              {num}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="text-sm text-gray-400">

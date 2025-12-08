@@ -195,5 +195,36 @@ router.post('/cooccurrence/update', async (req, res, next) => {
   }
 });
 
+// GET /api/analytics/cooccurrence/dates - Get all draw dates for a specific co-occurrence
+router.get('/cooccurrence/dates', async (req, res, next) => {
+  try {
+    const { number1, number2, number3, days, lottoType } = req.query;
+    
+    const num1 = parseInt(number1 as string, 10);
+    const num2 = parseInt(number2 as string, 10);
+    const num3 = number3 ? parseInt(number3 as string, 10) : undefined;
+    const daysNum = days ? parseInt(days as string, 10) : undefined;
+
+    if (isNaN(num1) || isNaN(num2) || (num3 !== undefined && isNaN(num3))) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid number parameters',
+      });
+    }
+
+    const dates = await analyticsService.getCoOccurrenceDrawDates(
+      num1,
+      num2,
+      num3,
+      daysNum,
+      lottoType as string
+    );
+
+    res.json({ success: true, data: dates, count: dates.length });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;
 
