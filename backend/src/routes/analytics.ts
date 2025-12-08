@@ -122,5 +122,76 @@ router.get('/stats', async (req, res, next) => {
   }
 });
 
+// GET /api/analytics/cooccurrence - Get co-occurrence pairs
+router.get('/cooccurrence', async (req, res, next) => {
+  try {
+    const {
+      limit = '50',
+      minCount = '1',
+      days,
+      lottoType,
+      number,
+    } = req.query;
+
+    const limitNum = parseInt(limit as string, 10);
+    const minCountNum = parseInt(minCount as string, 10);
+    const daysNum = days ? parseInt(days as string, 10) : undefined;
+    const numberNum = number ? parseInt(number as string, 10) : undefined;
+
+    if (isNaN(limitNum) || limitNum < 1 || limitNum > 500) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid limit parameter (must be between 1 and 500)',
+      });
+    }
+
+    if (isNaN(minCountNum) || minCountNum < 1) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid minCount parameter',
+      });
+    }
+
+    let pairs;
+    if (numberNum && !isNaN(numberNum)) {
+      // Get co-occurrence for a specific number
+      pairs = await analyticsService.getCoOccurrenceForNumber(
+        numberNum,
+        limitNum,
+        daysNum
+      );
+    } else {
+      // Get top co-occurrence pairs
+      pairs = await analyticsService.getCoOccurrencePairs(
+        limitNum,
+        minCountNum,
+        daysNum,
+        lottoType as string
+      );
+    }
+
+    res.json({ success: true, data: pairs, count: pairs.length });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/analytics/cooccurrence/update - Update co-occurrence cache
+router.post('/cooccurrence/update', async (req, res, next) => {
+  try {
+    const { days, lottoType } = req.body;
+    const daysNum = days ? parseInt(days as string, 10) : undefined;
+
+    await analyticsService.updateCoOccurrencePairs(daysNum, lottoType as string);
+
+    res.json({
+      success: true,
+      message: 'Co-occurrence pairs updated successfully',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;
 

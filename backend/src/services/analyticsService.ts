@@ -1,5 +1,5 @@
 import pool from '../database/db.js';
-import type { FrequencyStats, AnalyticsTimeframe } from '../types/index.js';
+import type { FrequencyStats, AnalyticsTimeframe, CoOccurrencePair } from '../types/index.js';
 
 export class AnalyticsService {
   // Get frequency statistics for numbers
@@ -171,6 +171,168 @@ export class AnalyticsService {
       minDate: result.rows[0].min_date,
       maxDate: result.rows[0].max_date,
     };
+  }
+
+  // Calculate and update co-occurrence pairs
+  async updateCoOccurrencePairs(days?: number, lottoType?: string): Promise<void> {
+    // Build WHERE clause
+    let whereClause = '';
+    const params: unknown[] = [];
+    let paramIndex = 1;
+
+    if (days || lottoType) {
+      const conditions: string[] = [];
+      if (days) {
+        conditions.push(`draw_date >= CURRENT_DATE - INTERVAL '${days} days'`);
+      }
+      if (lottoType) {
+        conditions.push(`lotto_type = $${paramIndex}`);
+        params.push(lottoType);
+        paramIndex++;
+      }
+      whereClause = 'WHERE ' + conditions.join(' AND ');
+    }
+
+    // Calculate co-occurrence pairs from all draws
+    // For each draw, generate all pairs from winning and machine numbers
+    const query = `
+      WITH draw_data AS (
+        SELECT 
+          id,
+          draw_date,
+          winning_numbers,
+          machine_numbers
+        FROM draws
+        ${whereClause}
+      ),
+      expanded_numbers AS (
+        SELECT 
+          d.id,
+          d.draw_date,
+          num,
+          num = ANY(d.winning_numbers) AS is_winning,
+          num = ANY(d.machine_numbers) AS is_machine
+        FROM draw_data d
+        CROSS JOIN LATERAL unnest(d.winning_numbers || d.machine_numbers) AS num
+      ),
+      number_pairs AS (
+        SELECT DISTINCT
+          e1.id,
+          e1.draw_date,
+          LEAST(e1.num, e2.num) AS num1,
+          GREATEST(e1.num, e2.num) AS num2,
+          CASE WHEN e1.is_winning OR e2.is_winning THEN 1 ELSE 0 END AS in_winning,
+          CASE WHEN e1.is_machine OR e2.is_machine THEN 1 ELSE 0 END AS in_machine
+        FROM expanded_numbers e1
+        JOIN expanded_numbers e2 ON e1.id = e2.id AND e1.num < e2.num
+        WHERE e1.num BETWEEN 1 AND 90 AND e2.num BETWEEN 1 AND 90
+      )
+      INSERT INTO number_cooccurrence (number1, number2, count, winning_count, machine_count, last_seen)
+      SELECT 
+        num1,
+        num2,
+        COUNT(DISTINCT id) AS count,
+        COUNT(DISTINCT CASE WHEN in_winning > 0 THEN id END) AS winning_count,
+        COUNT(DISTINCT CASE WHEN in_machine > 0 THEN id END) AS machine_count,
+        MAX(draw_date) AS last_seen
+      FROM number_pairs
+      GROUP BY num1, num2
+      ON CONFLICT (number1, number2) 
+      DO UPDATE SET
+        count = EXCLUDED.count,
+        winning_count = EXCLUDED.winning_count,
+        machine_count = EXCLUDED.machine_count,
+        last_seen = EXCLUDED.last_seen
+    `;
+
+    await pool.query(query, params);
+  }
+
+  // Get co-occurrence pairs
+  async getCoOccurrencePairs(
+    limit: number = 50,
+    minCount: number = 1,
+    days?: number,
+    lottoType?: string
+  ): Promise<CoOccurrencePair[]> {
+    // Check if we have data, if not or if filtering, calculate it
+    const checkQuery = 'SELECT COUNT(*) as count FROM number_cooccurrence';
+    const checkResult = await pool.query(checkQuery);
+    const existingCount = parseInt(checkResult.rows[0]?.count || '0', 10);
+
+    // If no data exists or we're filtering, calculate/update
+    if (existingCount === 0 || days || lottoType) {
+      await this.updateCoOccurrencePairs(days, lottoType);
+    }
+
+    let query = `
+      SELECT 
+        number1,
+        number2,
+        count,
+        winning_count,
+        machine_count,
+        last_seen
+      FROM number_cooccurrence
+      WHERE count >= $1
+    `;
+
+    const params: unknown[] = [minCount];
+
+    if (days) {
+      query += ` AND last_seen >= CURRENT_DATE - INTERVAL '${days} days'`;
+    }
+
+    query += ` ORDER BY count DESC, number1 ASC, number2 ASC LIMIT $${params.length + 1}`;
+    params.push(limit);
+
+    const result = await pool.query(query, params);
+    return result.rows.map((row) => ({
+      number1: parseInt(row.number1, 10),
+      number2: parseInt(row.number2, 10),
+      count: parseInt(row.count, 10),
+      winningCount: parseInt(row.winning_count, 10),
+      machineCount: parseInt(row.machine_count, 10),
+      lastSeen: row.last_seen,
+    }));
+  }
+
+  // Get co-occurrence pairs for a specific number
+  async getCoOccurrenceForNumber(
+    number: number,
+    limit: number = 20,
+    days?: number
+  ): Promise<CoOccurrencePair[]> {
+    let query = `
+      SELECT 
+        number1,
+        number2,
+        count,
+        winning_count,
+        machine_count,
+        last_seen
+      FROM number_cooccurrence
+      WHERE (number1 = $1 OR number2 = $1)
+    `;
+
+    const params: unknown[] = [number];
+
+    if (days) {
+      query += ` AND last_seen >= CURRENT_DATE - INTERVAL '${days} days'`;
+    }
+
+    query += ` ORDER BY count DESC LIMIT $${params.length + 1}`;
+    params.push(limit);
+
+    const result = await pool.query(query, params);
+    return result.rows.map((row) => ({
+      number1: parseInt(row.number1, 10),
+      number2: parseInt(row.number2, 10),
+      count: parseInt(row.count, 10),
+      winningCount: parseInt(row.winning_count, 10),
+      machineCount: parseInt(row.machine_count, 10),
+      lastSeen: row.last_seen,
+    }));
   }
 }
 

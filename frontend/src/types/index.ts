@@ -28,6 +28,15 @@ export interface FrequencyStats {
   lastSeen?: string;
 }
 
+export interface CoOccurrencePair {
+  number1: number;
+  number2: number;
+  count: number;
+  winningCount: number;
+  machineCount: number;
+  lastSeen?: string;
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;

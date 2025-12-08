@@ -1,5 +1,5 @@
 import axios, { AxiosError } from 'axios';
-import type { ApiResponse, Draw, SearchResult, FrequencyStats } from '../types';
+import type { ApiResponse, Draw, SearchResult, FrequencyStats, CoOccurrencePair } from '../types';
 import { API_CONFIG } from '../utils/constants';
 import { ApiError, handleApiError } from '../utils/errors';
 
@@ -212,6 +212,32 @@ export const analyticsApi = {
       throw new ApiError(response.data.error || 'Failed to fetch stats');
     }
     return response.data.data;
+  },
+
+  getCoOccurrence: async (params?: {
+    limit?: number;
+    minCount?: number;
+    days?: number;
+    lottoType?: string;
+    number?: number;
+  }): Promise<CoOccurrencePair[]> => {
+    const response = await api.get<ApiResponse<CoOccurrencePair[]>>('/analytics/cooccurrence', {
+      params,
+    });
+    if (!response.data.success || !response.data.data) {
+      throw new ApiError(response.data.error || 'Failed to fetch co-occurrence pairs');
+    }
+    return response.data.data;
+  },
+
+  updateCoOccurrence: async (params?: {
+    days?: number;
+    lottoType?: string;
+  }): Promise<void> => {
+    const response = await api.post<ApiResponse<void>>('/analytics/cooccurrence/update', params);
+    if (!response.data.success) {
+      throw new ApiError(response.data.error || 'Failed to update co-occurrence pairs');
+    }
   },
 };
 

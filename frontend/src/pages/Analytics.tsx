@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { analyticsApi, drawsApi } from '../api/client';
 import { FrequencyChart } from '../components/FrequencyChart';
+import { CoOccurrenceMatrix } from '../components/CoOccurrenceMatrix';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { ErrorDisplay } from '../components/ErrorDisplay';
 import { handleApiError } from '../utils/errors';
-import type { FrequencyStats } from '../types';
+import type { FrequencyStats, CoOccurrencePair } from '../types';
 
 export const Analytics: React.FC = () => {
   const [frequency30, setFrequency30] = useState<FrequencyStats[]>([]);
@@ -12,9 +13,11 @@ export const Analytics: React.FC = () => {
   const [hotNumbers, setHotNumbers] = useState<FrequencyStats[]>([]);
   const [coldNumbers, setColdNumbers] = useState<FrequencyStats[]>([]);
   const [sleepingNumbers, setSleepingNumbers] = useState<number[]>([]);
+  const [coOccurrencePairs, setCoOccurrencePairs] = useState<CoOccurrencePair[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [timeframe, setTimeframe] = useState<'30' | '365'>('30');
+  const [loadingCoOccurrence, setLoadingCoOccurrence] = useState(false);
 
   useEffect(() => {
     loadAnalytics();
@@ -44,6 +47,27 @@ export const Analytics: React.FC = () => {
       setLoading(false);
     }
   };
+
+  const loadCoOccurrence = async () => {
+    try {
+      setLoadingCoOccurrence(true);
+      const pairs = await analyticsApi.getCoOccurrence({
+        limit: 50,
+        minCount: 2,
+        days: timeframe === '30' ? 30 : 365,
+      });
+      setCoOccurrencePairs(pairs);
+    } catch (err) {
+      console.error('Error loading co-occurrence:', err);
+      // Don't show error to user, just log it
+    } finally {
+      setLoadingCoOccurrence(false);
+    }
+  };
+
+  useEffect(() => {
+    loadCoOccurrence();
+  }, [timeframe]);
 
   if (loading) {
     return <LoadingSpinner message="Loading analytics..." fullScreen />;
@@ -215,6 +239,33 @@ export const Analytics: React.FC = () => {
               </div>
             ))}
           </div>
+        )}
+      </div>
+
+      {/* Co-Occurrence Matrix */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl font-bold">Co-Occurrence Analysis</h2>
+          <button
+            onClick={loadCoOccurrence}
+            disabled={loadingCoOccurrence}
+            className="btn-secondary text-sm"
+          >
+            {loadingCoOccurrence ? 'Loading...' : 'Refresh'}
+          </button>
+        </div>
+        {loadingCoOccurrence ? (
+          <div className="card">
+            <div className="text-center py-8">
+              <LoadingSpinner message="Loading co-occurrence data..." />
+            </div>
+          </div>
+        ) : (
+          <CoOccurrenceMatrix
+            data={coOccurrencePairs}
+            title={`Top Co-Occurring Number Pairs (Last ${timeframe} Days)`}
+            maxItems={50}
+          />
         )}
       </div>
     </div>
