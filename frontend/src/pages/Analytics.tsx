@@ -29,11 +29,26 @@ export const Analytics: React.FC = () => {
       setError(null);
       
       const [freq30, freq365, hot, cold, sleeping] = await Promise.all([
-        analyticsApi.getFrequency({ days: 30 }).catch(() => []),
-        analyticsApi.getFrequency({ days: 365 }).catch(() => []),
-        analyticsApi.getHot(30).catch(() => []),
-        analyticsApi.getCold(30).catch(() => []),
-        analyticsApi.getSleeping(30).catch(() => []),
+        analyticsApi.getFrequency({ days: 30 }).catch((err) => {
+          console.error('Failed to load frequency (30 days):', err);
+          return [];
+        }),
+        analyticsApi.getFrequency({ days: 365 }).catch((err) => {
+          console.error('Failed to load frequency (365 days):', err);
+          return [];
+        }),
+        analyticsApi.getHot(30).catch((err) => {
+          console.error('Failed to load hot numbers:', err);
+          return [];
+        }),
+        analyticsApi.getCold(30).catch((err) => {
+          console.error('Failed to load cold numbers:', err);
+          return [];
+        }),
+        analyticsApi.getSleeping(30).catch((err) => {
+          console.error('Failed to load sleeping numbers:', err);
+          return [];
+        }),
       ]);
 
       setFrequency30(freq30);
@@ -41,8 +56,14 @@ export const Analytics: React.FC = () => {
       setHotNumbers(hot);
       setColdNumbers(cold);
       setSleepingNumbers(sleeping);
-    } catch (err) {
-      setError(handleApiError(err));
+    } catch (err: any) {
+      const errorMessage = handleApiError(err);
+      // Check if it's a connection error
+      if (err?.message?.includes('Network Error') || err?.code === 'ERR_NETWORK' || err?.code === 'ECONNREFUSED') {
+        setError('Cannot connect to the server. Please make sure the backend is running on http://localhost:5000');
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setLoading(false);
     }

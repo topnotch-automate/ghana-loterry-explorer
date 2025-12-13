@@ -1,44 +1,57 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { HomePage } from './pages/HomePage';
 import { Dashboard } from './pages/Dashboard';
 import { Search } from './pages/Search';
 import { Analytics } from './pages/Analytics';
 import { Import } from './pages/Import';
 import { Predictions } from './pages/Predictions';
+import { Login } from './pages/Login';
+import { Register } from './pages/Register';
+import { Subscription } from './pages/Subscription';
+import { AuthProvider } from './contexts/AuthContext';
 import { SubscriptionProvider } from './contexts/SubscriptionContext';
+import { SEO } from './components/SEO';
+import { useAuth } from './contexts/AuthContext';
 
 const Navigation: React.FC = () => {
   const location = useLocation();
+  const { isAuthenticated, user, logout } = useAuth();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   const isActive = (path: string) => location.pathname === path;
   const isAnyDropdownItemActive = () => {
     return isActive('/search') || isActive('/analytics') || isActive('/import') || isActive('/predictions');
   };
 
-  // Close dropdown when clicking outside
+  // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsDropdownOpen(false);
       }
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setIsUserMenuOpen(false);
+      }
     };
 
-    if (isDropdownOpen) {
+    if (isDropdownOpen || isUserMenuOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isDropdownOpen]);
+  }, [isDropdownOpen, isUserMenuOpen]);
 
-  // Close dropdown when route changes
+  // Close dropdowns when route changes
   useEffect(() => {
     setIsDropdownOpen(false);
+    setIsUserMenuOpen(false);
     setIsMobileMenuOpen(false);
   }, [location.pathname]);
 
@@ -145,6 +158,83 @@ const Navigation: React.FC = () => {
             </div>
           </div>
 
+          {/* User Menu (Desktop) */}
+          <div className="hidden sm:flex sm:items-center sm:ml-6">
+            {isAuthenticated ? (
+              <div className="relative" ref={userMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  <div className="w-8 h-8 bg-gradient-to-br from-primary-600 to-accent-500 rounded-full flex items-center justify-center text-white font-semibold">
+                    {user?.name ? user.name.charAt(0).toUpperCase() : user?.email?.charAt(0).toUpperCase() || 'U'}
+                  </div>
+                  <span className="text-sm font-medium text-gray-700 hidden md:block">
+                    {user?.name || user?.email}
+                  </span>
+                  {user?.isPro && (
+                    <span className="px-2 py-0.5 bg-gradient-to-r from-primary-600 to-accent-500 text-white rounded-full text-xs font-bold">
+                      PRO
+                    </span>
+                  )}
+                  <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                {isUserMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-48 rounded-lg shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50">
+                    <div className="py-1" role="menu">
+                      <Link
+                        to="/dashboard"
+                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                        role="menuitem"
+                        onClick={() => setIsUserMenuOpen(false)}
+                      >
+                        Dashboard
+                      </Link>
+                      <Link
+                        to="/subscription"
+                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                        role="menuitem"
+                        onClick={() => setIsUserMenuOpen(false)}
+                      >
+                        Subscription
+                      </Link>
+                      <div className="border-t border-gray-100"></div>
+                      <button
+                        onClick={() => {
+                          logout();
+                          setIsUserMenuOpen(false);
+                        }}
+                        className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                        role="menuitem"
+                      >
+                        Sign Out
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Link
+                  to="/login"
+                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900"
+                >
+                  Sign In
+                </Link>
+                <Link
+                  to="/register"
+                  className="px-4 py-2 text-sm font-medium bg-gradient-to-r from-primary-600 to-accent-500 text-white rounded-lg hover:opacity-90"
+                >
+                  Sign Up
+                </Link>
+              </div>
+            )}
+          </div>
+
           {/* Mobile menu button */}
           <div className="sm:hidden flex items-center">
             <button
@@ -234,6 +324,47 @@ const Navigation: React.FC = () => {
                   </div>
                 </Link>
               ))}
+              
+              {/* Mobile Auth Section */}
+              <div className="border-t border-gray-200 pt-2 mt-2">
+                {isAuthenticated ? (
+                  <>
+                    <Link
+                      to="/subscription"
+                      className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-50"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                    >
+                      Subscription
+                    </Link>
+                    <button
+                      onClick={() => {
+                        logout();
+                        setIsMobileMenuOpen(false);
+                      }}
+                      className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-red-600 hover:bg-red-50"
+                    >
+                      Sign Out
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <Link
+                      to="/login"
+                      className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-gray-50"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                    >
+                      Sign In
+                    </Link>
+                    <Link
+                      to="/register"
+                      className="block px-3 py-2 rounded-md text-base font-medium bg-gradient-to-r from-primary-600 to-accent-500 text-white hover:opacity-90"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                    >
+                      Sign Up
+                    </Link>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -265,62 +396,111 @@ const ConditionalLayout: React.FC<{ children: React.ReactNode }> = ({ children }
   );
 };
 
+// Protected Route Component
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated, loading } = useAuth();
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  return <>{children}</>;
+};
+
 function App() {
   return (
-    <Router>
-      <div className="min-h-screen bg-gray-50">
-        <Routes>
-          <Route
-            path="/"
-            element={
-              <ConditionalLayout>
-                <HomePage />
-              </ConditionalLayout>
-            }
-          />
-          <Route
-            path="/dashboard"
-            element={
-              <ConditionalLayout>
-                <Dashboard />
-              </ConditionalLayout>
-            }
-          />
-          <Route
-            path="/search"
-            element={
-              <ConditionalLayout>
-                <Search />
-              </ConditionalLayout>
-            }
-          />
-          <Route
-            path="/analytics"
-            element={
-              <ConditionalLayout>
-                <Analytics />
-              </ConditionalLayout>
-            }
-          />
-          <Route
-            path="/import"
-            element={
-              <ConditionalLayout>
-                <Import />
-              </ConditionalLayout>
-            }
-          />
-          <Route
-            path="/predictions"
-            element={
-              <ConditionalLayout>
-                <Predictions />
-              </ConditionalLayout>
-            }
-          />
-        </Routes>
-      </div>
-    </Router>
+    <AuthProvider>
+      <SubscriptionProvider>
+        <Router>
+          <div className="min-h-screen bg-gray-50">
+            <SEO />
+            <Routes>
+              <Route
+                path="/"
+                element={
+                  <ConditionalLayout>
+                    <HomePage />
+                  </ConditionalLayout>
+                }
+              />
+              <Route
+                path="/login"
+                element={<Login />}
+              />
+              <Route
+                path="/register"
+                element={<Register />}
+              />
+              <Route
+                path="/dashboard"
+                element={
+                  <ProtectedRoute>
+                    <ConditionalLayout>
+                      <Dashboard />
+                    </ConditionalLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/search"
+                element={
+                  <ConditionalLayout>
+                    <Search />
+                  </ConditionalLayout>
+                }
+              />
+              <Route
+                path="/analytics"
+                element={
+                  <ConditionalLayout>
+                    <Analytics />
+                  </ConditionalLayout>
+                }
+              />
+              <Route
+                path="/import"
+                element={
+                  <ConditionalLayout>
+                    <Import />
+                  </ConditionalLayout>
+                }
+              />
+              <Route
+                path="/predictions"
+                element={
+                  <ProtectedRoute>
+                    <ConditionalLayout>
+                      <Predictions />
+                    </ConditionalLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/subscription"
+                element={
+                  <ProtectedRoute>
+                    <ConditionalLayout>
+                      <Subscription />
+                    </ConditionalLayout>
+                  </ProtectedRoute>
+                }
+              />
+            </Routes>
+          </div>
+        </Router>
+      </SubscriptionProvider>
+    </AuthProvider>
   );
 }
 

@@ -1,0 +1,14 @@
+# robots.txt for Ghana Lottery Explorer
+User-agent: *
+Allow: /
+
+# Disallow admin/private routes (if any)
+Disallow: /api/
+Disallow: /admin/
+
+# Sitemap location
+Sitemap: https://yourdomain.com/sitemap.xml
+
+# Crawl-delay (optional, be respectful)
+Crawl-delay: 1
+

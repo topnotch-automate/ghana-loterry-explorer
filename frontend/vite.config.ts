@@ -18,5 +18,27 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    // Optimize for production
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: true, // Remove console.log in production
+      },
+    },
+    // Generate source maps for better debugging (optional)
+    sourcemap: false,
+    // Chunk size optimization
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'chart-vendor': ['recharts'],
+        },
+      },
+    },
+  },
+  // SEO: Ensure public assets are properly served
+  publicDir: 'public',
 })
 

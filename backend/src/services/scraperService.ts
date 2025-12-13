@@ -213,12 +213,14 @@ export class ScraperService {
   /**
    * Scrape theb2b.com lottery results using pagination
    * This matches the Python scraper.py implementation
+   * Returns draws and the last page processed
    */
-  async scrapeB2B(startPage: number = 1, maxPages?: number): Promise<ScrapedDraw[]> {
+  async scrapeB2B(startPage: number = 1, maxPages?: number): Promise<{ draws: ScrapedDraw[]; lastPage: number }> {
     const draws: ScrapedDraw[] = [];
     let page = startPage;
     let consecutiveEmptyPages = 0;
-    const maxEmptyPages = 5; // Stop after 3 consecutive empty pages
+    const maxEmptyPages = 5; // Stop after 5 consecutive empty pages
+    let lastSuccessfulPage = startPage - 1; // Track last page that had data
 
     logger.info(`Starting scrape from page ${startPage}...`);
 
@@ -321,6 +323,7 @@ export class ScraperService {
 
         if (pageDraws > 0) {
           logger.info(`  ✓ Found ${pageDraws} draw(s) on page ${page} (Total: ${draws.length})`);
+          lastSuccessfulPage = page; // Update last successful page
         } else {
           logger.info(`  - No valid draws on page ${page} (Total: ${draws.length})`);
         }
@@ -343,8 +346,8 @@ export class ScraperService {
       logger.error('Error scraping theb2b.com', error);
     }
 
-    logger.info(`Scraping completed. Total draws found: ${draws.length}`);
-    return draws;
+    logger.info(`Scraping completed. Total draws found: ${draws.length}, Last page: ${lastSuccessfulPage}`);
+    return { draws, lastPage: lastSuccessfulPage };
   }
 
   /**
@@ -358,7 +361,8 @@ export class ScraperService {
     }
     
     try {
-      return await this.scrapeB2B(startPage, maxPages);
+      const result = await this.scrapeB2B(startPage, maxPages);
+      return result.draws;
     } catch (error) {
       logger.error('Error scraping from theb2b.com', error);
       return [];

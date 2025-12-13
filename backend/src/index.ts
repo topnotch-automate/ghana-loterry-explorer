@@ -3,6 +3,9 @@ import cors from 'cors';
 import drawsRouter from './routes/draws.js';
 import analyticsRouter from './routes/analytics.js';
 import predictionsRouter from './routes/predictions.js';
+import authRouter from './routes/auth.js';
+import subscriptionsRouter from './routes/subscriptions.js';
+import seoRouter from './routes/seo.js';
 import { config } from './config/index.js';
 import { logger } from './utils/logger.js';
 import { AppError } from './utils/errors.js';
@@ -35,7 +38,12 @@ app.get('/health', (req, res) => {
   });
 });
 
+// SEO Routes (must be before API routes to avoid conflicts)
+app.use('/', seoRouter);
+
 // API Routes
+app.use('/api/auth', authRouter);
+app.use('/api/subscriptions', subscriptionsRouter);
 app.use('/api/draws', drawsRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/predictions', predictionsRouter);

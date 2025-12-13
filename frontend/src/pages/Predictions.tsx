@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { predictionsApi, drawsApi } from '../api/client';
+import { useAuth } from '../contexts/AuthContext';
 import { useSubscription } from '../contexts/SubscriptionContext';
 import { PredictionCard } from '../components/PredictionCard';
 import { UpgradePrompt } from '../components/UpgradePrompt';
@@ -33,7 +35,9 @@ const strategyInfo: Record<PredictionStrategy, { icon: string; description: stri
 };
 
 export const Predictions: React.FC = () => {
+  const { user, isAuthenticated } = useAuth();
   const { subscription, loading: subscriptionLoading } = useSubscription();
+  const navigate = useNavigate();
   const [predictions, setPredictions] = useState<PredictionResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,9 +49,13 @@ export const Predictions: React.FC = () => {
   const [loadingTypes, setLoadingTypes] = useState(false);
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      navigate('/login');
+      return;
+    }
     checkServiceHealth();
     loadLottoTypes();
-  }, []);
+  }, [isAuthenticated, navigate]);
 
   const loadLottoTypes = async () => {
     try {
@@ -97,20 +105,40 @@ export const Predictions: React.FC = () => {
     }
   };
 
-  if (subscriptionLoading) {
-    return <LoadingSpinner message="Loading subscription status..." />;
+  if (subscriptionLoading || !isAuthenticated) {
+    return <LoadingSpinner message="Loading..." />;
   }
 
-  if (!subscription?.isPro) {
+  if (!subscription?.isPro && !user?.isPro) {
     return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold mb-2">Advanced Predictions</h1>
-          <p className="text-gray-600">
-            Use machine learning and advanced algorithms to predict lottery numbers.
-          </p>
+      <div className="space-y-6 animate-fade-in">
+        <div className="bg-gradient-to-r from-primary-600 to-accent-500 rounded-xl p-6 text-white shadow-lg">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center text-2xl backdrop-blur-sm">
+              🔮
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold">Advanced Predictions</h1>
+              <p className="text-white/90 text-sm mt-1">
+                AI-powered lottery number predictions
+              </p>
+            </div>
+          </div>
         </div>
         <UpgradePrompt feature="Advanced Predictions" />
+        <div className="card border-2 border-primary-200 bg-gradient-to-br from-primary-50 to-accent-50">
+          <div className="text-center py-6">
+            <Link
+              to="/subscription"
+              className="inline-block px-8 py-3 bg-gradient-to-r from-primary-600 to-accent-500 text-white rounded-lg font-semibold hover:shadow-xl transform hover:scale-105 transition-all"
+            >
+              Upgrade to Pro Now
+            </Link>
+            <p className="mt-3 text-sm text-gray-600">
+              Unlock AI-powered predictions, machine learning models, and advanced pattern analysis
+            </p>
+          </div>
+        </div>
       </div>
     );
   }

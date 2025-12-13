@@ -12,6 +12,9 @@ A modern, professional web application for exploring and analyzing Ghana Lottery
   - Sleeping number identification
   - Visual charts and statistics
 - **Pattern Detection**: Identify recurring patterns and similarities across draws
+- **AI-Powered Predictions** (Pro Feature): Machine learning, genetic algorithms, and pattern analysis
+- **User Authentication**: Secure registration, login, and account management
+- **Subscription System**: Free and Pro tiers with payment integration ready
 - **Modern UI**: Responsive, accessible interface with Tailwind CSS
 
 ## Tech Stack
@@ -260,6 +263,30 @@ See `backend/src/database/schema.sql` for full schema.
 ## License
 
 MIT
+
+## SEO Optimization
+
+The application is fully optimized for search engines with:
+- Dynamic meta tags per page
+- Open Graph and Twitter Card support
+- Structured data (JSON-LD)
+- Dynamic sitemap generation
+- Semantic HTML5
+- Performance optimizations
+
+See [SEO_OPTIMIZATION.md](./SEO_OPTIMIZATION.md) for complete details.
+
+## Deployment
+
+For production deployment instructions, see [DEPLOYMENT.md](./DEPLOYMENT.md).
+
+The deployment guide covers:
+- Server setup and requirements
+- Step-by-step deployment process
+- Domain and SSL configuration
+- Process management with PM2
+- Monitoring and maintenance
+- Security best practices
 
 ## Support
 

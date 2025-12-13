@@ -1,6 +1,17 @@
 // API Configuration
+// In development, use relative URLs to leverage Vite proxy
+// In production, use the configured API URL
+const getBaseUrl = () => {
+  if (import.meta.env.DEV) {
+    // Development: Use relative URL to leverage Vite proxy
+    return '';
+  }
+  // Production: Use configured API URL or default
+  return import.meta.env.VITE_API_URL || 'http://localhost:5000';
+};
+
 export const API_CONFIG = {
-  BASE_URL: import.meta.env.VITE_API_URL || 'http://localhost:5000',
+  BASE_URL: getBaseUrl(),
   TIMEOUT: 30000,
 } as const;
 

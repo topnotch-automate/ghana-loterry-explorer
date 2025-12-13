@@ -75,7 +75,7 @@ export const Import: React.FC = () => {
 2024-01-02,5/90,"11,12,13,14,15","16,17,18,19,20",theb2b.com`;
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <main className="space-y-6 animate-fade-in">
       {/* Header */}
       <div className="bg-gradient-to-r from-primary-600 to-accent-500 rounded-xl p-6 text-white shadow-lg">
         <div className="flex items-center gap-3 mb-2">
@@ -264,7 +264,7 @@ export const Import: React.FC = () => {
           </div>
         </div>
       )}
-    </div>
+    </main>
   );
 };
 

@@ -65,3 +65,9 @@ out
 # Temporary files
 tmp/
 temp/
+
+# Scraper state and data files
+.scraper-state.json
+.scraped-data.json
+backend/.scraper-state.json
+backend/.scraped-data.json

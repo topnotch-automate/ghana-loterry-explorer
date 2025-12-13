@@ -11,11 +11,11 @@ const api = axios.create({
   timeout: API_CONFIG.TIMEOUT,
 });
 
-// Add user ID header from localStorage (for MVP - replace with proper auth later)
+// Add JWT token from localStorage to Authorization header
 api.interceptors.request.use((config) => {
-  const userId = localStorage.getItem('userId');
-  if (userId) {
-    config.headers['x-user-id'] = userId;
+  const token = localStorage.getItem('authToken');
+  if (token) {
+    config.headers['Authorization'] = `Bearer ${token}`;
   }
   return config;
 });
@@ -24,6 +24,28 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error: AxiosError<ApiResponse>) => {
+    // Handle network errors (backend not running)
+    if (!error.response && error.request) {
+      const networkError = new ApiError(
+        'Cannot connect to the server. Please make sure the backend is running on http://localhost:5000',
+        0,
+        'NETWORK_ERROR'
+      );
+      // Don't throw here, let the component handle it
+      return Promise.reject(networkError);
+    }
+    
+    // Handle 401 errors (unauthorized) - redirect to login
+    if (error.response?.status === 401) {
+      // Clear auth token and redirect to login
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('user');
+      if (window.location.pathname !== '/login' && window.location.pathname !== '/register') {
+        window.location.href = '/login';
+      }
+    }
+    
+    // Handle other errors
     if (error.response?.data) {
       const { error: errorMessage, code, details } = error.response.data;
       throw new ApiError(
@@ -39,6 +61,8 @@ api.interceptors.response.use(
     );
   }
 );
+
+// Response interceptor for error handling (merged with auth interceptor above)
 
 // Draws API
 export const drawsApi = {
@@ -368,6 +392,95 @@ export const predictionsApi = {
         tier: 'free',
         isPro: false,
       };
+    }
+    return response.data.data;
+  },
+};
+
+// Auth API
+export interface User {
+  id: string;
+  email: string;
+  name?: string;
+  subscriptionTier: 'free' | 'pro';
+  isPro?: boolean;
+}
+
+export interface AuthResponse {
+  user: User;
+  token: string;
+}
+
+export const authApi = {
+  register: async (data: {
+    email: string;
+    password: string;
+    name?: string;
+  }): Promise<AuthResponse> => {
+    const response = await api.post<ApiResponse<AuthResponse>>('/auth/register', data);
+    if (!response.data.success || !response.data.data) {
+      throw new ApiError(response.data.error || 'Registration failed');
+    }
+    return response.data.data;
+  },
+
+  login: async (data: {
+    email: string;
+    password: string;
+  }): Promise<AuthResponse> => {
+    const response = await api.post<ApiResponse<AuthResponse>>('/auth/login', data);
+    if (!response.data.success || !response.data.data) {
+      throw new ApiError(response.data.error || 'Login failed');
+    }
+    return response.data.data;
+  },
+
+  getMe: async (): Promise<User> => {
+    const response = await api.get<ApiResponse<User>>('/auth/me');
+    if (!response.data.success || !response.data.data) {
+      throw new ApiError(response.data.error || 'Failed to fetch user info');
+    }
+    return response.data.data;
+  },
+
+  logout: (): void => {
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('user');
+  },
+};
+
+// Subscriptions API
+export interface SubscriptionStatusData {
+  tier: 'free' | 'pro';
+  isPro: boolean;
+  expiresAt?: string;
+  createdAt: string;
+}
+
+export const subscriptionsApi = {
+  upgrade: async (paymentReference?: string): Promise<SubscriptionStatusData> => {
+    const response = await api.post<ApiResponse<SubscriptionStatusData>>('/subscriptions/upgrade', {
+      tier: 'pro',
+      paymentReference,
+    });
+    if (!response.data.success || !response.data.data) {
+      throw new ApiError(response.data.error || 'Upgrade failed');
+    }
+    return response.data.data;
+  },
+
+  getStatus: async (): Promise<SubscriptionStatusData> => {
+    const response = await api.get<ApiResponse<SubscriptionStatusData>>('/subscriptions/status');
+    if (!response.data.success || !response.data.data) {
+      throw new ApiError(response.data.error || 'Failed to fetch subscription status');
+    }
+    return response.data.data;
+  },
+
+  getHistory: async (): Promise<any[]> => {
+    const response = await api.get<ApiResponse<any[]>>('/subscriptions/history');
+    if (!response.data.success || !response.data.data) {
+      throw new ApiError(response.data.error || 'Failed to fetch subscription history');
     }
     return response.data.data;
   },

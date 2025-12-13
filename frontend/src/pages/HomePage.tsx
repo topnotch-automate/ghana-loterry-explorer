@@ -41,16 +41,36 @@ export const HomePage: React.FC = () => {
         setError(null);
 
         const [allDraws, latest, frequency] = await Promise.all([
-          drawsApi.getAll({ limit: 50 }).catch(() => []),
-          drawsApi.getLatest().catch(() => null),
-          analyticsApi.getFrequency({ days: 30 }).catch(() => []),
+          drawsApi.getAll({ limit: 50 }).catch((err) => {
+            console.error('Failed to load draws:', err);
+            return [];
+          }),
+          drawsApi.getLatest().catch((err) => {
+            console.error('Failed to load latest draw:', err);
+            return null;
+          }),
+          analyticsApi.getFrequency({ days: 30 }).catch((err) => {
+            console.error('Failed to load frequency:', err);
+            return [];
+          }),
         ]);
 
         setDraws(allDraws);
         if (latest) setLatestDraw(latest);
         setFrequencyStats(frequency);
-      } catch (err) {
-        setError(handleApiError(err));
+        
+        // Check if all requests failed (likely backend not running)
+        if (allDraws.length === 0 && !latest && frequency.length === 0) {
+          setError('Cannot connect to the server. Please make sure the backend is running on http://localhost:5000');
+        }
+      } catch (err: any) {
+        const errorMessage = handleApiError(err);
+        // Check if it's a connection error
+        if (err?.message?.includes('Network Error') || err?.code === 'ERR_NETWORK' || err?.code === 'ECONNREFUSED') {
+          setError('Cannot connect to the server. Please make sure the backend is running on http://localhost:5000');
+        } else {
+          setError(errorMessage);
+        }
       } finally {
         setLoading(false);
       }
@@ -145,9 +165,9 @@ export const HomePage: React.FC = () => {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 animate-fade-in">
+    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 animate-fade-in">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary-600 to-accent-500 rounded-xl p-6 text-white shadow-lg">
+      <header className="bg-gradient-to-r from-primary-600 to-accent-500 rounded-xl p-6 text-white shadow-lg">
         <div className="flex items-center gap-3 mb-2">
           <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center text-2xl backdrop-blur-sm">
             🎲
@@ -159,7 +179,7 @@ export const HomePage: React.FC = () => {
             </p>
           </div>
         </div>
-      </div>
+      </header>
 
       {/* Search Section */}
       <div className="card border-2 border-gray-100">
@@ -327,7 +347,7 @@ export const HomePage: React.FC = () => {
 
       {/* Draw Modal */}
       <DrawModal draw={selectedDraw} onClose={() => setSelectedDraw(null)} />
-    </div>
+    </main>
   );
 };
 

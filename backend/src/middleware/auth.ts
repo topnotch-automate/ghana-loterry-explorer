@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import pool from '../database/db.js';
 import { logger } from '../utils/logger.js';
 import { UnauthorizedError, ForbiddenError } from '../utils/errors.js';
+import { verifyToken, extractTokenFromHeader } from '../utils/jwt.js';
 
 // Extend Express Request to include user info
 declare global {
@@ -19,8 +20,7 @@ declare global {
 
 /**
  * Middleware to check if user is authenticated
- * For now, we'll use a simple API key or session-based approach
- * TODO: Implement proper JWT authentication
+ * Uses JWT token from Authorization header
  */
 export async function requireAuth(
   req: Request,
@@ -28,20 +28,28 @@ export async function requireAuth(
   next: NextFunction
 ): Promise<void> {
   try {
-    // Get user ID from header, query, or session
-    // For MVP, we'll use a simple user_id header
-    const userId = req.headers['x-user-id'] as string;
+    // Extract token from Authorization header
+    const authHeader = req.headers.authorization;
+    const token = extractTokenFromHeader(authHeader);
 
-    if (!userId) {
-      throw new UnauthorizedError('Authentication required');
+    if (!token) {
+      throw new UnauthorizedError('Authentication required. Please log in.');
     }
 
-    // Fetch user from database
+    // Verify token
+    let payload;
+    try {
+      payload = verifyToken(token);
+    } catch (error) {
+      throw new UnauthorizedError('Invalid or expired token. Please log in again.');
+    }
+
+    // Fetch user from database to get latest subscription status
     const result = await pool.query(
       `SELECT id, email, subscription_tier, subscription_expires_at
        FROM users
        WHERE id = $1`,
-      [userId]
+      [payload.userId]
     );
 
     if (result.rows.length === 0) {
@@ -98,27 +106,35 @@ export async function optionalAuth(
   next: NextFunction
 ): Promise<void> {
   try {
-    const userId = req.headers['x-user-id'] as string;
+    const authHeader = req.headers.authorization;
+    const token = extractTokenFromHeader(authHeader);
 
-    if (userId) {
-      const result = await pool.query(
-        `SELECT id, email, subscription_tier, subscription_expires_at
-         FROM users
-         WHERE id = $1`,
-        [userId]
-      );
+    if (token) {
+      try {
+        const payload = verifyToken(token);
+        
+        const result = await pool.query(
+          `SELECT id, email, subscription_tier, subscription_expires_at
+           FROM users
+           WHERE id = $1`,
+          [payload.userId]
+        );
 
-      if (result.rows.length > 0) {
-        const user = result.rows[0];
-        const isPro = user.subscription_tier === 'pro' &&
-          (user.subscription_expires_at === null || new Date(user.subscription_expires_at) > new Date());
+        if (result.rows.length > 0) {
+          const user = result.rows[0];
+          const isPro = user.subscription_tier === 'pro' &&
+            (user.subscription_expires_at === null || new Date(user.subscription_expires_at) > new Date());
 
-        req.user = {
-          id: user.id,
-          email: user.email,
-          subscriptionTier: user.subscription_tier,
-          isPro,
-        };
+          req.user = {
+            id: user.id,
+            email: user.email,
+            subscriptionTier: user.subscription_tier,
+            isPro,
+          };
+        }
+      } catch (error) {
+        // Token invalid/expired, but don't fail - just continue without user
+        logger.debug('Optional auth token invalid', error);
       }
     }
 

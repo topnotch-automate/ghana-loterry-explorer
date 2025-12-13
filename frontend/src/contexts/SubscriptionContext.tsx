@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { predictionsApi } from '../api/client';
+import { useAuth } from './AuthContext';
 import { handleApiError } from '../utils/errors';
 import type { SubscriptionStatus } from '../types';
 
@@ -21,18 +22,26 @@ export const useSubscription = () => {
 
 interface SubscriptionProviderProps {
   children: ReactNode;
-  userId?: string; // For future JWT implementation
 }
 
-export const SubscriptionProvider: React.FC<SubscriptionProviderProps> = ({ children, userId }) => {
+export const SubscriptionProvider: React.FC<SubscriptionProviderProps> = ({ children }) => {
+  const { user, isAuthenticated } = useAuth();
   const [subscription, setSubscription] = useState<SubscriptionStatus | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refresh = async () => {
     try {
       setLoading(true);
-      const status = await predictionsApi.getSubscriptionStatus();
-      setSubscription(status);
+      if (isAuthenticated && user) {
+        const status = await predictionsApi.getSubscriptionStatus();
+        setSubscription(status);
+      } else {
+        setSubscription({
+          authenticated: false,
+          tier: 'free',
+          isPro: false,
+        });
+      }
     } catch (error) {
       // If not authenticated, set default free status
       setSubscription({
@@ -47,7 +56,7 @@ export const SubscriptionProvider: React.FC<SubscriptionProviderProps> = ({ chil
 
   useEffect(() => {
     refresh();
-  }, [userId]);
+  }, [user, isAuthenticated]);
 
   return (
     <SubscriptionContext.Provider value={{ subscription, loading, refresh }}>
