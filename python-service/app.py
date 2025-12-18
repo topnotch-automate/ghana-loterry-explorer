@@ -52,12 +52,13 @@ CORS(app)  # Allow cross-origin requests from Node.js backend
 # Global oracle instance (initialized on first request)
 oracle_instance = None
 historical_draws_cache = None
+draw_dates_cache = None  # Cache for draw dates (for yearly analysis)
 oracle_initializing = False  # Lock to prevent concurrent initialization
 
 
-def initialize_oracle(draws: List[List[int]]) -> EnhancedLottoOracle:
+def initialize_oracle(draws: List[List[int]], draw_dates: List[str] = None, lotto_types: List[str] = None) -> EnhancedLottoOracle:
     """Initialize or reinitialize the oracle with new data"""
-    global oracle_instance, oracle_initializing
+    global oracle_instance, oracle_initializing, draw_dates_cache
     
     # Prevent concurrent initialization
     if oracle_initializing:
@@ -74,7 +75,8 @@ def initialize_oracle(draws: List[List[int]]) -> EnhancedLottoOracle:
     try:
         oracle_initializing = True
         print(f"Initializing oracle with {len(draws)} draws...")
-        oracle_instance = EnhancedLottoOracle(draws)
+        draw_dates_cache = draw_dates
+        oracle_instance = EnhancedLottoOracle(draws, draw_dates, lotto_types)
         print(f"Oracle initialized successfully")
         return oracle_instance
     except Exception as e:
@@ -106,7 +108,8 @@ def predict():
     {
         "draws": [[1, 2, 3, 4, 5], ...],  # Historical draws (winning numbers only)
         "machine_draws": [[6, 7, 8, 9, 10], ...],  # Machine numbers (optional, required for intelligence strategy)
-        "strategy": "ensemble",  # Options: "ensemble", "ml", "genetic", "pattern", "intelligence"
+        "draw_dates": ["2024-01-15", ...],  # Draw dates (optional, used for yearly strategy)
+        "strategy": "ensemble",  # Options: "ensemble", "ml", "genetic", "pattern", "intelligence", "yearly"
         "n_predictions": 3
     }
     """
@@ -118,6 +121,8 @@ def predict():
         
         draws = data.get('draws', [])
         machine_draws = data.get('machine_draws', [])
+        draw_dates = data.get('draw_dates', [])  # Draw dates for yearly analysis
+        lotto_types = data.get('lotto_types', [])  # Lotto types for yearly analysis
         strategy = data.get('strategy', 'ensemble')
         n_predictions = data.get('n_predictions', 3)
         
@@ -252,13 +257,19 @@ def predict():
             }), 400
         
         # Initialize or update oracle if data changed
-        global historical_draws_cache, oracle_instance
+        global historical_draws_cache, oracle_instance, draw_dates_cache
         # Use a more robust comparison (convert to tuples for comparison)
         draws_tuple = tuple(tuple(sorted(d)) for d in draws)
-        if historical_draws_cache != draws_tuple or oracle_instance is None:
+        dates_changed = draw_dates and draw_dates_cache != draw_dates
+        if historical_draws_cache != draws_tuple or oracle_instance is None or (strategy == 'yearly' and dates_changed):
             historical_draws_cache = draws_tuple
             try:
-                initialize_oracle(draws)
+                # Pass draw_dates and lotto_types for yearly strategy
+                initialize_oracle(
+                    draws, 
+                    draw_dates if strategy == 'yearly' else None,
+                    lotto_types if strategy == 'yearly' else None
+                )
             except Exception as e:
                 print(f"ERROR: Failed to initialize oracle: {e}")
                 return jsonify({
@@ -300,11 +311,11 @@ def predict():
         # Convert predictions to JSON-serializable format
         result = {}
         
-        # CRITICAL FIX: If strategy is intelligence and predictions dict is empty or missing intelligence key,
+        # CRITICAL FIX: If strategy is intelligence/yearly and predictions dict is empty or missing the key,
         # provide a fallback immediately
-        if strategy == 'intelligence':
-            if not predictions or 'intelligence' not in predictions:
-                print(f"CRITICAL: Intelligence strategy but predictions dict is empty or missing intelligence key!")
+        if strategy in ['intelligence', 'yearly']:
+            if not predictions or strategy not in predictions:
+                print(f"CRITICAL: {strategy} strategy but predictions dict is empty or missing {strategy} key!")
                 print(f"  predictions = {predictions}")
                 print(f"  predictions.keys() = {list(predictions.keys()) if predictions else 'N/A'}")
                 # Provide immediate fallback
@@ -316,10 +327,10 @@ def predict():
                     freq = Counter(all_numbers)
                     top_5_fallback = sorted([n for n, _ in freq.most_common(5)])
                     print(f"  Providing immediate fallback: {top_5_fallback}")
-                    predictions['intelligence'] = [top_5_fallback]
+                    predictions[strategy] = [top_5_fallback]
                 except Exception as e:
                     print(f"  Fallback generation failed: {e}, using default [1,2,3,4,5]")
-                    predictions['intelligence'] = [[1, 2, 3, 4, 5]]
+                    predictions[strategy] = [[1, 2, 3, 4, 5]]
         
         for method, preds in predictions.items():
             # Skip internal keys (like _confidence)
@@ -337,11 +348,11 @@ def predict():
                     }
                 continue
             
-            # Special handling for intelligence strategy - provide fallback if empty
+            # Special handling for intelligence and yearly strategies - provide fallback if empty
             if not preds or len(preds) == 0:
-                if method == 'intelligence':
-                    print(f"ERROR: Intelligence strategy returned no predictions (preds: {preds})")
-                    print(f"  This is a critical error - intelligence strategy must return predictions")
+                if method in ['intelligence', 'yearly']:
+                    print(f"ERROR: {method} strategy returned no predictions (preds: {preds})")
+                    print(f"  This is a critical error - {method} strategy must return predictions")
                     # Provide a fallback prediction based on frequency
                     try:
                         from collections import Counter

@@ -357,10 +357,20 @@ export function startScheduler() {
   // Schedule the first check
   scheduleNextCheck();
   
-  // Also run an immediate check for any pending predictions
-  setTimeout(() => {
-    logger.info('Running initial prediction check on startup...');
-    runScheduledCheck();
+  // Run an immediate check for any UNCHECKED predictions only
+  // This does NOT reset already checked predictions
+  setTimeout(async () => {
+    logger.info('Running initial prediction check on startup (unchecked predictions only)...');
+    try {
+      const result = await checkAllPendingPredictions();
+      if (result.totalChecked > 0) {
+        logger.info(`Initial check complete: ${result.totalChecked} predictions checked`);
+      } else {
+        logger.info('Initial check complete: No pending predictions to check');
+      }
+    } catch (error) {
+      logger.error('Initial prediction check failed:', error);
+    }
   }, 5000); // Wait 5 seconds after startup
 }
 

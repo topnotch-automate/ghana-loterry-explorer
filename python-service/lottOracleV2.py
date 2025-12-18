@@ -1029,14 +1029,1118 @@ class GeneticOptimizer:
         return sorted(mutated)
 
 
+# ============================================================================
+# ML-BASED YEARLY PREDICTOR - Feature Extraction and Training
+# ============================================================================
+
+class MLYearlyPredictor:
+    """
+    ML-based predictor that learns patterns from previous years' data
+    and applies them to predict current year's draws.
+    
+    Approach:
+    1. Extract features from previous years (date patterns, frequency patterns, etc.)
+    2. Train ML models on these features
+    3. Use trained models to predict current year draws based on learned patterns
+    """
+    
+    def __init__(self):
+        self.models = {}  # Store trained models per feature type
+        self.feature_scaler = StandardScaler()
+        self.trained = False
+        self.feature_importance = {}
+        
+    def extract_date_features(self, draw_date: str) -> Dict[str, float]:
+        """
+        Extract date-based features from a draw date.
+        Features include: day of month, day of week, week of month, month, etc.
+        """
+        from datetime import datetime
+        
+        try:
+            if isinstance(draw_date, str):
+                date_obj = datetime.strptime(draw_date[:10], '%Y-%m-%d')
+            else:
+                date_obj = draw_date
+            
+            day_of_month = date_obj.day
+            day_of_week = date_obj.weekday()  # 0=Monday, 6=Sunday
+            week_of_month = (day_of_month - 1) // 7 + 1
+            month = date_obj.month
+            day_of_year = date_obj.timetuple().tm_yday
+            
+            # Cyclical encoding for periodic patterns
+            day_sin = np.sin(2 * np.pi * day_of_month / 31)
+            day_cos = np.cos(2 * np.pi * day_of_month / 31)
+            month_sin = np.sin(2 * np.pi * month / 12)
+            month_cos = np.cos(2 * np.pi * month / 12)
+            
+            return {
+                'day_of_month': day_of_month,
+                'day_of_week': day_of_week,
+                'week_of_month': week_of_month,
+                'month': month,
+                'day_of_year': day_of_year,
+                'day_sin': day_sin,
+                'day_cos': day_cos,
+                'month_sin': month_sin,
+                'month_cos': month_cos,
+            }
+        except:
+            return {
+                'day_of_month': 15,
+                'day_of_week': 3,
+                'week_of_month': 2,
+                'month': 6,
+                'day_of_year': 180,
+                'day_sin': 0,
+                'day_cos': 1,
+                'month_sin': 0,
+                'month_cos': 1,
+            }
+    
+    def extract_temporal_pattern_features(self, draws_by_date: Dict[str, Tuple[List[int], str]], 
+                                         target_date: str, target_lotto_type: str = None) -> Dict[str, float]:
+        """
+        Extract features based on temporal patterns from previous years.
+        Prioritizes same-date same-lotto-type matches, but also considers same-date different-lotto-type.
+        
+        Args:
+            draws_by_date: Dict mapping date_str -> (draw, lotto_type)
+            target_date: Date to predict for
+            target_lotto_type: Lotto type to predict for (optional)
+        """
+        from datetime import datetime
+        
+        features = {}
+        
+        try:
+            if isinstance(target_date, str):
+                target = datetime.strptime(target_date[:10], '%Y-%m-%d')
+            else:
+                target = target_date
+            
+            # Separate draws by lotto type matching
+            same_date_same_type_draws = []  # Higher priority
+            same_date_diff_type_draws = []  # Lower priority
+            
+            for date_str, draw_data in draws_by_date.items():
+                try:
+                    draw_date = datetime.strptime(date_str[:10], '%Y-%m-%d')
+                    # Same month and day, different year
+                    if draw_date.month == target.month and draw_date.day == target.day:
+                        if isinstance(draw_data, tuple):
+                            draw, lotto_type = draw_data
+                        else:
+                            draw = draw_data
+                            lotto_type = None
+                        
+                        if target_lotto_type and lotto_type == target_lotto_type:
+                            same_date_same_type_draws.append(draw)
+                        else:
+                            same_date_diff_type_draws.append(draw)
+                except:
+                    continue
+            
+            # Features from same-date same-lotto-type draws (HIGHER PRIORITY)
+            if same_date_same_type_draws:
+                all_numbers = [num for draw in same_date_same_type_draws for num in draw]
+                freq = Counter(all_numbers)
+                
+                # Most common numbers on this date+type across years
+                top_numbers = [n for n, _ in freq.most_common(10)]
+                for i, num in enumerate(top_numbers):
+                    features[f'same_date_type_freq_{i}'] = freq[num] / len(same_date_same_type_draws)
+                
+                # Average sum on this date+type
+                sums = [sum(draw) for draw in same_date_same_type_draws]
+                features['same_date_type_avg_sum'] = np.mean(sums) if sums else 225
+                features['same_date_type_std_sum'] = np.std(sums) if len(sums) > 1 else 0
+                features['same_date_type_count'] = len(same_date_same_type_draws)
+            else:
+                # Default values if no same-date same-type history
+                for i in range(10):
+                    features[f'same_date_type_freq_{i}'] = 0
+                features['same_date_type_avg_sum'] = 225
+                features['same_date_type_std_sum'] = 0
+                features['same_date_type_count'] = 0
+            
+            # Features from same-date different-lotto-type draws (LOWER PRIORITY, weighted 0.3)
+            if same_date_diff_type_draws:
+                all_numbers = [num for draw in same_date_diff_type_draws for num in draw]
+                freq = Counter(all_numbers)
+                
+                top_numbers = [n for n, _ in freq.most_common(5)]
+                for i, num in enumerate(top_numbers):
+                    # Weighted lower (0.3x) since different lotto type
+                    features[f'same_date_diff_type_freq_{i}'] = (freq[num] / len(same_date_diff_type_draws)) * 0.3
+                
+                sums = [sum(draw) for draw in same_date_diff_type_draws]
+                features['same_date_diff_type_avg_sum'] = np.mean(sums) * 0.3 if sums else 225 * 0.3
+            else:
+                for i in range(5):
+                    features[f'same_date_diff_type_freq_{i}'] = 0
+                features['same_date_diff_type_avg_sum'] = 0
+            
+            # Look for draws in same week of month across years (same lotto type preferred)
+            week_same_type_draws = []
+            week_diff_type_draws = []
+            target_week = (target.day - 1) // 7 + 1
+            
+            for date_str, draw_data in draws_by_date.items():
+                try:
+                    draw_date = datetime.strptime(date_str[:10], '%Y-%m-%d')
+                    draw_week = (draw_date.day - 1) // 7 + 1
+                    if draw_date.month == target.month and draw_week == target_week:
+                        if isinstance(draw_data, tuple):
+                            draw, lotto_type = draw_data
+                        else:
+                            draw = draw_data
+                            lotto_type = None
+                        
+                        if target_lotto_type and lotto_type == target_lotto_type:
+                            week_same_type_draws.append(draw)
+                        else:
+                            week_diff_type_draws.append(draw)
+                except:
+                    continue
+            
+            if week_same_type_draws:
+                all_numbers = [num for draw in week_same_type_draws for num in draw]
+                freq = Counter(all_numbers)
+                top_numbers = [n for n, _ in freq.most_common(5)]
+                for i, num in enumerate(top_numbers):
+                    features[f'week_type_freq_{i}'] = freq[num] / len(week_same_type_draws)
+            else:
+                for i in range(5):
+                    features[f'week_type_freq_{i}'] = 0
+            
+            if week_diff_type_draws:
+                all_numbers = [num for draw in week_diff_type_draws for num in draw]
+                freq = Counter(all_numbers)
+                top_numbers = [n for n, _ in freq.most_common(3)]
+                for i, num in enumerate(top_numbers):
+                    features[f'week_diff_type_freq_{i}'] = (freq[num] / len(week_diff_type_draws)) * 0.3
+            else:
+                for i in range(3):
+                    features[f'week_diff_type_freq_{i}'] = 0
+            
+            return features
+        except Exception as e:
+            # Return default features on error
+            features = {}
+            for i in range(10):
+                features[f'same_date_type_freq_{i}'] = 0
+            features['same_date_type_avg_sum'] = 225
+            features['same_date_type_std_sum'] = 0
+            features['same_date_type_count'] = 0
+            for i in range(5):
+                features[f'same_date_diff_type_freq_{i}'] = 0
+            features['same_date_diff_type_avg_sum'] = 0
+            for i in range(5):
+                features[f'week_type_freq_{i}'] = 0
+            for i in range(3):
+                features[f'week_diff_type_freq_{i}'] = 0
+            return features
+    
+    def extract_number_features(self, historical_draws: List[List[int]], 
+                                target_numbers: List[int] = None) -> Dict[str, float]:
+        """
+        Extract features related to number frequencies and patterns.
+        """
+        if not historical_draws:
+            return {}
+        
+        all_numbers = [num for draw in historical_draws for num in draw]
+        freq = Counter(all_numbers)
+        total_draws = len(historical_draws)
+        
+        features = {}
+        
+        # Overall frequency features
+        for num in range(1, 91):
+            features[f'freq_{num}'] = freq.get(num, 0) / total_draws if total_draws > 0 else 0
+        
+        # Hot/Cold numbers
+        sorted_nums = sorted(freq.items(), key=lambda x: x[1], reverse=True)
+        hot_numbers = [n for n, _ in sorted_nums[:15]]
+        cold_numbers = [n for n, _ in sorted_nums[-15:]] if len(sorted_nums) >= 15 else []
+        
+        for i, num in enumerate(hot_numbers):
+            features[f'hot_rank_{i}'] = num
+        for i, num in enumerate(cold_numbers):
+            features[f'cold_rank_{i}'] = num
+        
+        # If target numbers provided, add their features
+        if target_numbers:
+            for num in target_numbers:
+                features[f'target_freq_{num}'] = freq.get(num, 0) / total_draws if total_draws > 0 else 0
+        
+        return features
+    
+    def prepare_training_data(self, yearly_draws: Dict[int, List[Tuple[str, List[int], str]]]) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Prepare training data from previous years' draws.
+        Each sample: features from a draw date + lotto type -> numbers that appeared
+        
+        Args:
+            yearly_draws: Dict mapping year -> list of (date_str, draw, lotto_type) tuples
+        """
+        X_samples = []
+        y_samples = []
+        
+        # Organize draws by date string with lotto type
+        all_draws_by_date = {}
+        for year, draws_with_dates in yearly_draws.items():
+            for draw_data in draws_with_dates:
+                if len(draw_data) == 3:
+                    date_str, draw, lotto_type = draw_data
+                elif len(draw_data) == 2:
+                    date_str, draw = draw_data
+                    lotto_type = None
+                else:
+                    continue
+                all_draws_by_date[date_str] = (draw, lotto_type)
+        
+        # For each year (except the most recent)
+        years = sorted(yearly_draws.keys())
+        if len(years) < 2:
+            return np.array([]), np.array([])
+        
+        # Use all but the last year for training
+        training_years = years[:-1]
+        
+        for year in training_years:
+            for draw_data in yearly_draws[year]:
+                if len(draw_data) == 3:
+                    date_str, draw, lotto_type = draw_data
+                elif len(draw_data) == 2:
+                    date_str, draw = draw_data
+                    lotto_type = None
+                else:
+                    continue
+                
+                # Extract features for this date and lotto type
+                date_features = self.extract_date_features(date_str)
+                temporal_features = self.extract_temporal_pattern_features(all_draws_by_date, date_str, lotto_type)
+                
+                # Add lotto type as feature (encoded as hash for categorical)
+                if lotto_type:
+                    lotto_hash = hash(lotto_type) % 1000  # Normalize to 0-999
+                    date_features['lotto_type_hash'] = lotto_hash
+                else:
+                    date_features['lotto_type_hash'] = 0
+                
+                # Combine features
+                combined_features = {**date_features, **temporal_features}
+                
+                # For each number in the draw, create a training sample
+                # We'll predict which numbers are likely to appear
+                for num in range(1, 91):
+                    # Feature: is this number in the actual draw?
+                    target = 1 if num in draw else 0
+                    
+                    # Add number-specific features
+                    num_features = combined_features.copy()
+                    num_features['number'] = num
+                    # Calculate frequency across all draws (weighted by lotto type match)
+                    number_freq = 0
+                    total_weight = 0
+                    for d, (d_draw, d_type) in all_draws_by_date.items():
+                        weight = 1.0 if d_type == lotto_type else 0.3
+                        if num in d_draw:
+                            number_freq += weight
+                        total_weight += weight
+                    num_features['number_freq'] = number_freq / total_weight if total_weight > 0 else 0
+                    
+                    X_samples.append(list(num_features.values()))
+                    y_samples.append(target)
+        
+        if not X_samples:
+            return np.array([]), np.array([])
+        
+        X = np.array(X_samples)
+        y = np.array(y_samples)
+        
+        return X, y
+    
+    def train(self, yearly_draws: Dict[int, List[Tuple[str, List[int], str]]]) -> bool:
+        """
+        Train ensemble ML models on previous years' data.
+        Uses RandomForest + GradientBoosting for better accuracy.
+        """
+        try:
+            print("Training ensemble ML models on yearly patterns...")
+            
+            X, y = self.prepare_training_data(yearly_draws)
+            
+            if X.size == 0 or len(X) < 100:
+                print("Insufficient data for ML training (need at least 100 samples)")
+                return False
+            
+            # Scale features
+            X_scaled = self.feature_scaler.fit_transform(X)
+            
+            # Train ensemble of models for better accuracy
+            print(f"  Training on {len(X)} samples with {X.shape[1]} features...")
+            
+            # Model 1: RandomForest (good for non-linear patterns and feature importance)
+            self.models['rf'] = RandomForestClassifier(
+                n_estimators=200,  # Increased for better accuracy
+                max_depth=25,  # Deeper trees for complex patterns
+                min_samples_split=8,  # More splits
+                min_samples_leaf=4,
+                max_features='sqrt',  # Feature subsampling
+                random_state=42,
+                n_jobs=-1,
+                verbose=0,
+                class_weight='balanced'  # Handle imbalanced data (most numbers don't appear)
+            )
+            self.models['rf'].fit(X_scaled, y)
+            print("  ✅ RandomForest trained")
+            
+            # Model 2: GradientBoosting (good for sequential learning)
+            self.models['gb'] = GradientBoostingClassifier(
+                n_estimators=150,
+                max_depth=8,
+                learning_rate=0.1,
+                min_samples_split=10,
+                min_samples_leaf=5,
+                random_state=42,
+                verbose=0
+            )
+            self.models['gb'].fit(X_scaled, y)
+            print("  ✅ GradientBoosting trained")
+            
+            # Create ensemble classifier that combines both models
+            class EnsembleClassifier:
+                def __init__(self, rf_model, gb_model):
+                    self.rf = rf_model
+                    self.gb = gb_model
+                
+                def predict_proba(self, X):
+                    # Weighted average: RF 60%, GB 40% (RF generally more stable)
+                    rf_proba = self.rf.predict_proba(X)
+                    gb_proba = self.gb.predict_proba(X)
+                    return 0.6 * rf_proba + 0.4 * gb_proba
+            
+            self.models['number_classifier'] = EnsembleClassifier(self.models['rf'], self.models['gb'])
+            
+            # Get feature importance from RandomForest (most interpretable)
+            feature_names = ['day_of_month', 'day_of_week', 'week_of_month', 'month', 
+                           'day_of_year', 'day_sin', 'day_cos', 'month_sin', 'month_cos',
+                           'lotto_type_hash',
+                           'same_date_type_freq_0', 'same_date_type_freq_1', 'same_date_type_freq_2',
+                           'same_date_type_avg_sum', 'same_date_type_std_sum', 'same_date_type_count',
+                           'same_date_diff_type_freq_0', 'same_date_diff_type_freq_1',
+                           'same_date_diff_type_avg_sum',
+                           'week_type_freq_0', 'week_type_freq_1',
+                           'week_diff_type_freq_0',
+                           'number', 'number_freq']
+            
+            importances = self.models['rf'].feature_importances_
+            # Pad feature names if needed
+            while len(feature_names) < len(importances):
+                feature_names.append(f'feature_{len(feature_names)}')
+            
+            self.feature_importance = dict(zip(feature_names[:len(importances)], importances))
+            
+            print(f"✅ Ensemble ML models trained on {len(X)} samples")
+            top_features = sorted(self.feature_importance.items(), key=lambda x: x[1], reverse=True)[:5]
+            print(f"   Top features: {top_features}")
+            
+            self.trained = True
+            return True
+            
+        except Exception as e:
+            print(f"⚠️ ML training failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def predict_numbers_for_date(self, target_date: str, 
+                                 historical_draws_by_date: Dict[str, Tuple[List[int], str]],
+                                 historical_draws: List[List[int]],
+                                 target_lotto_type: str = None) -> List[int]:
+        """
+        Predict numbers for a specific date and lotto type using trained ML models.
+        
+        Args:
+            target_date: Date to predict for
+            historical_draws_by_date: Dict mapping date_str -> (draw, lotto_type)
+            historical_draws: List of all historical draws
+            target_lotto_type: Lotto type to predict for (optional)
+        """
+        if not self.trained or 'number_classifier' not in self.models:
+            # Fallback to frequency-based (weighted by lotto type if provided)
+            freq = Counter()
+            for draw_data in historical_draws_by_date.values():
+                if isinstance(draw_data, tuple):
+                    draw, lotto_type = draw_data
+                    weight = 1.0 if lotto_type == target_lotto_type else 0.3
+                else:
+                    draw = draw_data
+                    weight = 1.0
+                for num in draw:
+                    freq[num] += weight
+            return sorted([n for n, _ in freq.most_common(5)])
+        
+        try:
+            # Extract features for target date and lotto type
+            date_features = self.extract_date_features(target_date)
+            temporal_features = self.extract_temporal_pattern_features(
+                historical_draws_by_date, 
+                target_date, 
+                target_lotto_type
+            )
+            
+            # Add lotto type as feature
+            if target_lotto_type:
+                lotto_hash = hash(target_lotto_type) % 1000
+                date_features['lotto_type_hash'] = lotto_hash
+            else:
+                date_features['lotto_type_hash'] = 0
+            
+            # Score each number (1-90)
+            number_scores = {}
+            
+            for num in range(1, 91):
+                # Combine features
+                combined_features = {**date_features, **temporal_features}
+                combined_features['number'] = num
+                
+                # Calculate weighted frequency (prioritize same lotto type)
+                number_freq = 0
+                total_weight = 0
+                for draw_data in historical_draws_by_date.values():
+                    if isinstance(draw_data, tuple):
+                        draw, lotto_type = draw_data
+                        weight = 1.0 if lotto_type == target_lotto_type else 0.3
+                    else:
+                        draw = draw_data
+                        weight = 1.0
+                    
+                    if num in draw:
+                        number_freq += weight
+                    total_weight += weight
+                
+                combined_features['number_freq'] = number_freq / total_weight if total_weight > 0 else 0
+                
+                # Prepare feature vector (must match training feature order)
+                feature_vector = np.array([list(combined_features.values())])
+                feature_vector_scaled = self.feature_scaler.transform(feature_vector)
+                
+                # Predict probability this number appears
+                prob = self.models['number_classifier'].predict_proba(feature_vector_scaled)[0][1]
+                number_scores[num] = prob
+            
+            # Select top 5 numbers by probability
+            top_numbers = sorted(number_scores.items(), key=lambda x: x[1], reverse=True)[:5]
+            return sorted([n for n, _ in top_numbers])
+            
+        except Exception as e:
+            print(f"ML prediction failed: {e}, using fallback")
+            import traceback
+            traceback.print_exc()
+            # Fallback (weighted by lotto type)
+            freq = Counter()
+            for draw_data in historical_draws_by_date.values():
+                if isinstance(draw_data, tuple):
+                    draw, lotto_type = draw_data
+                    weight = 1.0 if lotto_type == target_lotto_type else 0.3
+                else:
+                    draw = draw_data
+                    weight = 1.0
+                for num in draw:
+                    freq[num] += weight
+            return sorted([n for n, _ in freq.most_common(5)])
+
+
+# ============================================================================
+# YEARLY PATTERN ANALYZER - Law of Large Numbers Approach
+# ============================================================================
+
+class YearlyPatternAnalyzer:
+    """
+    Analyzes patterns across years using the Law of Large Numbers principle.
+    In lottery systems, patterns from previous years often recur as the sample
+    size grows. This analyzer detects cross-year patterns and uses them for
+    predictions.
+    """
+
+    def __init__(self):
+        self.yearly_data = {}  # year -> list of draws
+        self.yearly_data_with_dates = {}  # year -> list of (date_str, draw) tuples
+        self.yearly_frequencies = {}  # year -> {number: count}
+        self.yearly_hot_numbers = {}  # year -> list of hot numbers
+        self.yearly_cold_numbers = {}  # year -> list of cold numbers
+        self.cross_year_patterns = []
+        self.min_draws_for_analysis = 10  # Minimum draws needed for reliable analysis
+        self.ml_predictor = MLYearlyPredictor()  # ML-based predictor
+
+    def organize_by_year(self, draws: List[List[int]], draw_dates: List[str] = None, lotto_types: List[str] = None) -> Dict[int, List[List[int]]]:
+        """
+        Organize draws by year. If dates not provided, assumes draws are in 
+        chronological order and distributes them evenly across recent years.
+        Also stores draws with dates and lotto types for ML training.
+        """
+        from datetime import datetime
+        
+        # Clear previous data
+        self.yearly_data = {}
+        self.yearly_data_with_dates = {}
+        
+        if draw_dates and len(draw_dates) == len(draws):
+            # Organize by actual dates
+            for i, draw in enumerate(draws):
+                try:
+                    date_str = draw_dates[i] if isinstance(draw_dates[i], str) else str(draw_dates[i])
+                    if isinstance(draw_dates[i], str):
+                        year = int(draw_dates[i][:4])
+                    else:
+                        year = draw_dates[i].year
+                    
+                    # Get lotto type if available
+                    lotto_type = lotto_types[i] if lotto_types and i < len(lotto_types) and lotto_types[i] else None
+                    
+                    if year not in self.yearly_data:
+                        self.yearly_data[year] = []
+                        self.yearly_data_with_dates[year] = []
+                    self.yearly_data[year].append(draw)
+                    self.yearly_data_with_dates[year].append((date_str, draw, lotto_type))
+                except:
+                    continue
+        else:
+            # Estimate years based on position (assume ~300 draws per year)
+            current_year = datetime.now().year
+            
+            # Adjust draws_per_year based on actual data size
+            # If we have fewer than 300 draws, assume they're all from current year
+            # If we have 300-600, split into 2 years, etc.
+            total_draws = len(draws)
+            if total_draws < 300:
+                draws_per_year = total_draws  # All current year
+            else:
+                draws_per_year = 300
+            
+            for i, draw in enumerate(draws):
+                # Most recent draws are at the beginning (draws are usually sorted newest first)
+                years_back = i // draws_per_year
+                year = current_year - years_back
+                
+                # Generate estimated date
+                estimated_date = f"{year}-06-15"  # Default to mid-year
+                
+                # Get lotto type if available
+                lotto_type = lotto_types[i] if lotto_types and i < len(lotto_types) and lotto_types[i] else None
+                
+                if year not in self.yearly_data:
+                    self.yearly_data[year] = []
+                    self.yearly_data_with_dates[year] = []
+                self.yearly_data[year].append(draw)
+                self.yearly_data_with_dates[year].append((estimated_date, draw, lotto_type))
+        
+        # Ensure we have at least one year with data
+        if not self.yearly_data:
+            current_year = datetime.now().year
+            self.yearly_data[current_year] = draws if draws else []
+            self.yearly_data_with_dates[current_year] = [
+                (f"{current_year}-06-15", d, lotto_types[i] if lotto_types and i < len(lotto_types) else None) 
+                for i, d in enumerate(draws)
+            ] if draws else []
+            print(f"Warning: No yearly data organized, using all {len(draws)} draws for {current_year}")
+        
+        print(f"Yearly data organized: {[(year, len(data)) for year, data in sorted(self.yearly_data.items())]}")
+        return self.yearly_data
+
+    def calculate_yearly_frequencies(self) -> Dict[int, Dict[int, int]]:
+        """Calculate number frequencies for each year"""
+        for year, draws in self.yearly_data.items():
+            freq = Counter()
+            for draw in draws:
+                freq.update(draw)
+            self.yearly_frequencies[year] = dict(freq)
+            
+            # Calculate hot and cold numbers for each year
+            sorted_nums = sorted(freq.items(), key=lambda x: x[1], reverse=True)
+            self.yearly_hot_numbers[year] = [n for n, _ in sorted_nums[:15]]
+            self.yearly_cold_numbers[year] = [n for n, _ in sorted_nums[-15:] if freq[n] > 0]
+        
+        return self.yearly_frequencies
+
+    def detect_cross_year_patterns(self) -> List[Dict]:
+        """
+        Detect patterns that repeat across years.
+        Uses Law of Large Numbers: as sample size grows, patterns stabilize.
+        """
+        patterns = []
+        years = sorted(self.yearly_data.keys())
+        
+        if len(years) < 2:
+            # With only one year, create patterns based on that year's data
+            if len(years) == 1:
+                year = years[0]
+                hot_nums = self.yearly_hot_numbers.get(year, [])
+                if hot_nums:
+                    patterns.append({
+                        'type': 'stable_foundation',
+                        'numbers': hot_nums[:10],
+                        'confidence': 0.6,
+                        'description': 'Most frequent numbers in current data'
+                    })
+                print(f"Single year mode: created foundation pattern with {len(hot_nums)} hot numbers")
+            return patterns
+
+        # Pattern 1: Recurring Hot Numbers
+        # Numbers that are consistently hot across multiple years
+        recurring_hot = self._find_recurring_numbers(self.yearly_hot_numbers, min_years=2)
+        if recurring_hot:
+            patterns.append({
+                'type': 'recurring_hot',
+                'numbers': recurring_hot,
+                'confidence': len(recurring_hot) / 15,  # Normalized confidence
+                'description': 'Numbers consistently appearing frequently across years'
+            })
+
+        # Pattern 2: Cold-to-Hot Transitions
+        # Numbers that were cold last year but are due to become hot
+        cold_to_hot = self._detect_cold_to_hot_transitions()
+        if cold_to_hot:
+            patterns.append({
+                'type': 'cold_to_hot',
+                'numbers': cold_to_hot,
+                'confidence': 0.6,
+                'description': 'Previously cold numbers showing signs of emergence'
+            })
+
+        # Pattern 3: Cyclical Patterns
+        # Numbers that appear in cycles (e.g., every 2 years)
+        cyclical = self._detect_cyclical_patterns()
+        if cyclical:
+            patterns.append({
+                'type': 'cyclical',
+                'numbers': cyclical,
+                'confidence': 0.5,
+                'description': 'Numbers following cyclical appearance patterns'
+            })
+
+        # Pattern 4: Year-End Surge
+        # Numbers that tend to appear more at certain times
+        surge_numbers = self._detect_frequency_trends()
+        if surge_numbers:
+            patterns.append({
+                'type': 'trending',
+                'numbers': surge_numbers,
+                'confidence': 0.7,
+                'description': 'Numbers with increasing frequency trend'
+            })
+
+        # Pattern 5: Stable Foundation Numbers
+        # Numbers that consistently appear across all years (foundation of the system)
+        stable = self._find_stable_numbers()
+        if stable:
+            patterns.append({
+                'type': 'stable_foundation',
+                'numbers': stable,
+                'confidence': 0.8,
+                'description': 'Consistently appearing numbers forming the system foundation'
+            })
+
+        self.cross_year_patterns = patterns
+        return patterns
+
+    def _find_recurring_numbers(self, yearly_numbers: Dict[int, List[int]], min_years: int = 2) -> List[int]:
+        """Find numbers that appear in hot/cold lists across multiple years"""
+        if not yearly_numbers:
+            return []
+        
+        number_year_count = Counter()
+        for year, numbers in yearly_numbers.items():
+            for num in numbers:
+                number_year_count[num] += 1
+        
+        # Return numbers appearing in at least min_years
+        recurring = [num for num, count in number_year_count.items() if count >= min_years]
+        return sorted(recurring, key=lambda x: number_year_count[x], reverse=True)[:10]
+
+    def _detect_cold_to_hot_transitions(self) -> List[int]:
+        """Detect numbers transitioning from cold to hot"""
+        years = sorted(self.yearly_data.keys())
+        if len(years) < 2:
+            return []
+        
+        prev_year = years[-2]
+        curr_year = years[-1]
+        
+        # Numbers that were cold last year
+        prev_cold = set(self.yearly_cold_numbers.get(prev_year, []))
+        
+        # Check if any are becoming hot this year
+        curr_freq = self.yearly_frequencies.get(curr_year, {})
+        
+        transitioning = []
+        for num in prev_cold:
+            if curr_freq.get(num, 0) > len(self.yearly_data.get(curr_year, [])) * 0.1:
+                transitioning.append(num)
+        
+        return transitioning[:5]
+
+    def _detect_cyclical_patterns(self) -> List[int]:
+        """Detect numbers with cyclical appearance patterns"""
+        years = sorted(self.yearly_data.keys())
+        if len(years) < 3:
+            return []
+        
+        cyclical_numbers = []
+        
+        for num in range(1, 91):
+            appearances = []
+            for year in years:
+                freq = self.yearly_frequencies.get(year, {}).get(num, 0)
+                total = len(self.yearly_data.get(year, []))
+                rate = freq / total if total > 0 else 0
+                appearances.append(rate)
+            
+            # Check for alternating pattern (high-low-high or low-high-low)
+            if len(appearances) >= 3:
+                is_cyclical = True
+                for i in range(len(appearances) - 2):
+                    if not ((appearances[i] > appearances[i+1] and appearances[i+1] < appearances[i+2]) or
+                            (appearances[i] < appearances[i+1] and appearances[i+1] > appearances[i+2])):
+                        is_cyclical = False
+                        break
+                
+                if is_cyclical:
+                    cyclical_numbers.append(num)
+        
+        return cyclical_numbers[:5]
+
+    def _detect_frequency_trends(self) -> List[int]:
+        """Detect numbers with increasing frequency trend"""
+        years = sorted(self.yearly_data.keys())
+        if len(years) < 2:
+            return []
+        
+        trending = []
+        
+        for num in range(1, 91):
+            rates = []
+            for year in years:
+                freq = self.yearly_frequencies.get(year, {}).get(num, 0)
+                total = len(self.yearly_data.get(year, []))
+                rate = freq / total if total > 0 else 0
+                rates.append(rate)
+            
+            # Check for upward trend
+            if len(rates) >= 2:
+                # Simple trend: each year higher than previous
+                is_trending = all(rates[i] <= rates[i+1] for i in range(len(rates)-1))
+                # Or significant increase in last year
+                if not is_trending and len(rates) >= 2:
+                    is_trending = rates[-1] > rates[-2] * 1.3  # 30% increase
+                
+                if is_trending and rates[-1] > 0.05:  # At least 5% appearance rate
+                    trending.append((num, rates[-1]))
+        
+        # Sort by current rate
+        trending.sort(key=lambda x: x[1], reverse=True)
+        return [num for num, _ in trending[:10]]
+
+    def _find_stable_numbers(self) -> List[int]:
+        """Find numbers that consistently appear across all years"""
+        years = sorted(self.yearly_data.keys())
+        if len(years) < 2:
+            return []
+        
+        stable = []
+        
+        for num in range(1, 91):
+            appearances = 0
+            total_years = len(years)
+            
+            for year in years:
+                freq = self.yearly_frequencies.get(year, {}).get(num, 0)
+                total = len(self.yearly_data.get(year, []))
+                if total > 0 and freq / total > 0.03:  # Appears in at least 3% of draws
+                    appearances += 1
+            
+            # Must appear consistently in most years
+            if appearances >= total_years * 0.8:
+                stable.append(num)
+        
+        return stable[:10]
+
+    def predict_with_yearly_patterns(self, current_year_draws: List[List[int]], 
+                                      num_predictions: int = 5,
+                                      ml_trained: bool = False,
+                                      target_date: str = None,
+                                      target_lotto_type: str = None) -> List[Dict]:
+        """
+        Generate predictions using yearly pattern analysis.
+        Works even with limited data at the start of a new year.
+        Uses ML predictions if trained, otherwise falls back to pattern-based predictions.
+        Prioritizes same-date same-lotto-type patterns.
+        """
+        from datetime import datetime
+        
+        predictions = []
+        
+        # Get target date for ML prediction (today or next draw date)
+        if target_date is None:
+            target_date = datetime.now().strftime('%Y-%m-%d')
+        
+        # Build historical draws by date with lotto types for ML predictor
+        all_draws_by_date = {}
+        all_historical_draws = []
+        for year, draws_with_dates in self.yearly_data_with_dates.items():
+            for draw_data in draws_with_dates:
+                if len(draw_data) == 3:
+                    date_str, draw, lotto_type = draw_data
+                elif len(draw_data) == 2:
+                    date_str, draw = draw_data
+                    lotto_type = None
+                else:
+                    continue
+                all_draws_by_date[date_str] = (draw, lotto_type)
+                all_historical_draws.append(draw)
+        
+        # Try ML prediction first if trained
+        ml_prediction = None
+        if ml_trained and self.ml_predictor.trained:
+            try:
+                print(f"Using ML prediction for date: {target_date}, lotto_type: {target_lotto_type}")
+                ml_prediction = self.ml_predictor.predict_numbers_for_date(
+                    target_date,
+                    all_draws_by_date,
+                    all_historical_draws,
+                    target_lotto_type
+                )
+                if ml_prediction and len(ml_prediction) == 5:
+                    print(f"ML prediction: {ml_prediction}")
+            except Exception as e:
+                print(f"ML prediction failed: {e}, falling back to pattern-based")
+                import traceback
+                traceback.print_exc()
+                ml_prediction = None
+        
+        # Calculate weights for different pattern types
+        pattern_weights = {
+            'stable_foundation': 0.25,
+            'recurring_hot': 0.25,
+            'trending': 0.20,
+            'cold_to_hot': 0.15,
+            'cyclical': 0.15
+        }
+        
+        # Collect all pattern numbers with their weights
+        weighted_numbers = Counter()
+        
+        # Boost ML prediction numbers if available
+        if ml_prediction:
+            for num in ml_prediction:
+                weighted_numbers[num] += 0.5  # High weight for ML predictions
+        
+        for pattern in self.cross_year_patterns:
+            pattern_type = pattern['type']
+            weight = pattern_weights.get(pattern_type, 0.1) * pattern['confidence']
+            
+            for num in pattern['numbers']:
+                weighted_numbers[num] += weight
+        
+        # Add current year frequency boost if we have enough data
+        if len(current_year_draws) >= self.min_draws_for_analysis:
+            curr_freq = Counter()
+            for draw in current_year_draws:
+                curr_freq.update(draw)
+            
+            # Boost numbers that are already showing up this year
+            for num, count in curr_freq.items():
+                rate = count / len(current_year_draws)
+                weighted_numbers[num] += rate * 0.3  # Current year boost
+        
+        # Fallback: if no patterns detected, use frequency from all yearly data
+        if not weighted_numbers:
+            print("No yearly patterns detected, using frequency-based fallback...")
+            all_draws = []
+            for year_draws in self.yearly_data.values():
+                all_draws.extend(year_draws)
+            
+            if all_draws:
+                freq = Counter()
+                for draw in all_draws:
+                    freq.update(draw)
+                
+                # Use frequency as weight
+                for num, count in freq.items():
+                    weighted_numbers[num] = count / len(all_draws)
+        
+        # Generate predictions
+        sorted_numbers = sorted(weighted_numbers.items(), key=lambda x: x[1], reverse=True)
+        
+        # If we have ML prediction, use it as the primary prediction
+        if ml_prediction and len(ml_prediction) == 5:
+            predictions.append({
+                'numbers': ml_prediction,
+                'confidence': 0.75,  # Higher confidence for ML predictions
+                'sum': sum(ml_prediction),
+                'evens': sum(1 for n in ml_prediction if n % 2 == 0),
+                'highs': sum(1 for n in ml_prediction if n > 45),
+                'source': 'ml_yearly'
+            })
+            num_predictions -= 1  # One prediction already added
+        
+        for i in range(num_predictions):
+            # Select top candidates
+            candidates = [n for n, w in sorted_numbers[:30] if n not in [p.get('numbers', []) for p in predictions]]
+            
+            # If not enough candidates, add random numbers from 1-90
+            if len(candidates) < 5:
+                all_used = set()
+                for p in predictions:
+                    all_used.update(p.get('numbers', []))
+                remaining_nums = [n for n in range(1, 91) if n not in all_used and n not in candidates]
+                candidates.extend(remaining_nums[:5 - len(candidates)])
+            
+            if len(candidates) >= 5:
+                # Take top 5 with some randomization
+                prediction_numbers = []
+                remaining = candidates.copy()
+                
+                for j in range(5):
+                    if not remaining:
+                        break
+                    
+                    # Weight by position (higher ranked = more likely)
+                    weights = [1 / (k + 1) for k in range(len(remaining))]
+                    chosen = random.choices(remaining, weights=weights)[0]
+                    prediction_numbers.append(chosen)
+                    remaining.remove(chosen)
+                
+                prediction_numbers = sorted(prediction_numbers)
+                
+                # Calculate confidence based on data availability
+                data_confidence = min(len(current_year_draws) / 50, 1.0)  # Max confidence at 50+ draws
+                pattern_confidence = sum(p['confidence'] for p in self.cross_year_patterns) / max(len(self.cross_year_patterns), 1)
+                
+                predictions.append({
+                    'numbers': prediction_numbers,
+                    'confidence': (data_confidence * 0.4 + pattern_confidence * 0.6),
+                    'sum': sum(prediction_numbers),
+                    'evens': sum(1 for n in prediction_numbers if n % 2 == 0),
+                    'highs': sum(1 for n in prediction_numbers if n > 45),
+                    'source': 'yearly_pattern'
+                })
+        
+        # Final fallback: ensure at least one prediction
+        if not predictions:
+            print("No predictions generated, creating fallback prediction...")
+            # Use top 5 most frequent numbers across all years
+            all_draws = []
+            for year_draws in self.yearly_data.values():
+                all_draws.extend(year_draws)
+            
+            if all_draws:
+                freq = Counter()
+                for draw in all_draws:
+                    freq.update(draw)
+                fallback_nums = sorted([n for n, _ in freq.most_common(5)])
+            else:
+                # Absolute fallback
+                fallback_nums = [15, 30, 45, 60, 75]
+            
+            predictions.append({
+                'numbers': fallback_nums,
+                'confidence': 0.3,
+                'sum': sum(fallback_nums),
+                'evens': sum(1 for n in fallback_nums if n % 2 == 0),
+                'highs': sum(1 for n in fallback_nums if n > 45),
+                'source': 'yearly_fallback'
+            })
+        
+        return predictions
+
+    def get_yearly_summary(self) -> Dict:
+        """Get a summary of yearly analysis"""
+        years = sorted(self.yearly_data.keys())
+        
+        summary = {
+            'years_analyzed': years,
+            'total_years': len(years),
+            'draws_per_year': {year: len(draws) for year, draws in self.yearly_data.items()},
+            'patterns_detected': len(self.cross_year_patterns),
+            'pattern_types': [p['type'] for p in self.cross_year_patterns],
+            'top_recurring_hot': self._find_recurring_numbers(self.yearly_hot_numbers, min_years=2)[:5],
+            'stable_foundation': self._find_stable_numbers()[:5]
+        }
+        
+        return summary
+
+    def analyze(self, draws: List[List[int]], draw_dates: List[str] = None, lotto_types: List[str] = None) -> Dict:
+        """
+        Complete yearly analysis pipeline.
+        Returns patterns and predictions.
+        """
+        # Step 1: Organize by year (with lotto types)
+        self.organize_by_year(draws, draw_dates, lotto_types)
+        
+        # Step 2: Calculate frequencies
+        self.calculate_yearly_frequencies()
+        
+        # Step 3: Train ML models on previous years' data (if we have multiple years)
+        ml_trained = False
+        if len(self.yearly_data_with_dates) >= 2:
+            try:
+                ml_trained = self.ml_predictor.train(self.yearly_data_with_dates)
+                if ml_trained:
+                    print("✅ ML yearly predictor trained successfully")
+            except Exception as e:
+                print(f"⚠️ ML yearly predictor training failed: {e}")
+        
+        # Step 4: Detect cross-year patterns
+        patterns = self.detect_cross_year_patterns()
+        
+        # Step 5: Get current year draws for prediction
+        current_year = max(self.yearly_data.keys()) if self.yearly_data else None
+        current_year_draws = self.yearly_data.get(current_year, []) if current_year else []
+        
+        # Step 6: Get target lotto type (most common in current year, or from recent draws)
+        target_lotto_type = None
+        if lotto_types and len(lotto_types) > 0:
+            # Use most recent lotto type as target
+            target_lotto_type = lotto_types[-1] if lotto_types[-1] else None
+        
+        # Step 7: Generate predictions (will use ML if trained, otherwise pattern-based)
+        # Use today's date as target for prediction
+        from datetime import datetime
+        target_date = datetime.now().strftime('%Y-%m-%d')
+        predictions = self.predict_with_yearly_patterns(
+            current_year_draws, 
+            ml_trained=ml_trained,
+            target_date=target_date,
+            target_lotto_type=target_lotto_type
+        )
+        
+        return {
+            'summary': self.get_yearly_summary(),
+            'patterns': patterns,
+            'predictions': predictions,
+            'current_year': current_year,
+            'current_year_draws': len(current_year_draws),
+            'ml_trained': ml_trained,
+            'target_lotto_type': target_lotto_type
+        }
+
+
 class EnhancedLottoOracle:
     """
     Version 2.0: Advanced Lottery Prediction System
-    Enhanced with Zone, Gap, Trend, Position, and Confidence Analysis
+    Enhanced with Zone, Gap, Trend, Position, Confidence, and Yearly Analysis
     """
 
-    def __init__(self, historical_draws: List[List[int]]):
+    def __init__(self, historical_draws: List[List[int]], draw_dates: List[str] = None, lotto_types: List[str] = None):
         self.historical = historical_draws
+        self.draw_dates = draw_dates  # Optional: dates for yearly organization
+        self.lotto_types = lotto_types  # Optional: lotto types for yearly organization
         self.pattern_detector = AdvancedPatternDetector()
         self.ml_predictor = MLPredictor()
         self.genetic_optimizer = GeneticOptimizer()
@@ -1048,6 +2152,9 @@ class EnhancedLottoOracle:
         self.anti_pattern = AntiPatternFilter()
         self.position_analyzer = PositionAnalyzer()
         self.confidence_scorer = ConfidenceScorer()
+        
+        # Yearly Pattern Analyzer for cross-year analysis
+        self.yearly_analyzer = YearlyPatternAnalyzer()
 
         # State tracking
         self.performance_history = []
@@ -1059,6 +2166,7 @@ class EnhancedLottoOracle:
         self._gap_analysis = None
         self._trend_data = None
         self._position_analysis = None
+        self._yearly_analysis = None
 
         # Initialize
         self._initialize_system()
@@ -1114,6 +2222,21 @@ class EnhancedLottoOracle:
         except Exception as e:
             print(f"⚠️ Position analysis failed: {e}")
             self._position_analysis = {}
+        
+        # Initialize yearly pattern analyzer
+        try:
+            self._yearly_analysis = self.yearly_analyzer.analyze(
+                self.historical, 
+                self.draw_dates,
+                self.lotto_types
+            )
+            years_count = self._yearly_analysis.get('summary', {}).get('total_years', 0)
+            patterns_count = self._yearly_analysis.get('summary', {}).get('patterns_detected', 0)
+            ml_trained = self._yearly_analysis.get('ml_trained', False)
+            print(f"✅ Yearly analysis: {years_count} years analyzed, {patterns_count} patterns detected, ML trained: {ml_trained}")
+        except Exception as e:
+            print(f"⚠️ Yearly analysis failed: {e}")
+            self._yearly_analysis = {}
 
     def generate_predictions(self, strategy: str = 'ensemble',
                              n_predictions: int = 3,
@@ -1353,21 +2476,80 @@ class EnhancedLottoOracle:
                     results['intelligence'] = [[1, 2, 3, 4, 5]]
                     print("WARNING: Intelligence strategy failed completely, using default fallback [1,2,3,4,5]")
 
-        # Ensure results dict is never completely empty for intelligence strategy
-        # This prevents the app.py loop from skipping intelligence entirely
-        if strategy == 'intelligence' and 'intelligence' not in results:
-            print("CRITICAL: Intelligence strategy completed but 'intelligence' key not in results!")
-            print(f"  Results dict keys: {list(results.keys())}")
-            print(f"  Results dict: {results}")
-            # Provide absolute fallback
-            from collections import Counter
-            all_numbers = []
-            for draw in self.historical:
-                all_numbers.extend(draw)
-            freq = Counter(all_numbers)
-            top_5_fallback = sorted([n for n, _ in freq.most_common(5)])
-            results['intelligence'] = [top_5_fallback]
-            print(f"  Added fallback intelligence prediction: {top_5_fallback}")
+        elif strategy == 'yearly':
+            # Yearly Pattern Strategy - uses cross-year pattern analysis
+            # Works well even with limited data at the start of a new year
+            print("Generating yearly pattern-based predictions...")
+            yearly_pred = None
+            try:
+                if self._yearly_analysis and 'predictions' in self._yearly_analysis:
+                    yearly_preds = self._yearly_analysis['predictions']
+                    print(f"DEBUG: yearly_preds = {yearly_preds}")
+                    if yearly_preds and len(yearly_preds) > 0:
+                        # Get the top prediction from yearly analysis
+                        best_yearly = yearly_preds[0]
+                        yearly_pred = best_yearly.get('numbers', [])
+                        if yearly_pred and len(yearly_pred) == 5:
+                            print(f"Yearly prediction: {yearly_pred} (confidence: {best_yearly.get('confidence', 0):.2%})")
+                            
+                            # Also add pattern summary
+                            if 'summary' in self._yearly_analysis:
+                                summary = self._yearly_analysis['summary']
+                                print(f"  Years analyzed: {summary.get('total_years', 0)}")
+                                print(f"  Patterns detected: {summary.get('patterns_detected', 0)}")
+                        else:
+                            print(f"Warning: Invalid yearly prediction: {yearly_pred}")
+                            yearly_pred = None
+                    else:
+                        print("No yearly predictions in analysis, trying hybrid approach...")
+                else:
+                    print("Yearly analysis not available or empty...")
+                
+                # Fallback 1: hybrid approach with pattern boosting
+                if not yearly_pred:
+                    print("Using hybrid approach (pattern + yearly boost)...")
+                    ml_pred = self._ml_based_prediction(patterns)
+                    if ml_pred and len(ml_pred) == 5:
+                        yearly_pred = self._boost_with_yearly_patterns(ml_pred)
+                        print(f"Hybrid prediction: {yearly_pred}")
+                
+                # Fallback 2: pure pattern-based
+                if not yearly_pred or len(yearly_pred) != 5:
+                    print("Using pattern-based fallback...")
+                    yearly_pred = self._pattern_based_prediction(patterns)
+                    print(f"Pattern fallback prediction: {yearly_pred}")
+                
+                # Fallback 3: frequency-based
+                if not yearly_pred or len(yearly_pred) != 5:
+                    print("Using frequency-based fallback...")
+                    from collections import Counter
+                    all_numbers = []
+                    for draw in self.historical:
+                        all_numbers.extend(draw)
+                    freq = Counter(all_numbers)
+                    yearly_pred = sorted([n for n, _ in freq.most_common(5)])
+                    print(f"Frequency fallback prediction: {yearly_pred}")
+                
+                # Final validation
+                if yearly_pred and len(yearly_pred) == 5 and all(1 <= n <= 90 for n in yearly_pred):
+                    results['yearly'] = [yearly_pred]
+                else:
+                    print(f"ERROR: All fallbacks failed, using default [10, 25, 45, 65, 80]")
+                    results['yearly'] = [[10, 25, 45, 65, 80]]
+                    
+            except Exception as e:
+                import traceback
+                print(f"Yearly strategy failed with exception: {e}")
+                print(traceback.format_exc())
+                # Emergency fallback
+                try:
+                    pred = self._pattern_based_prediction(patterns)
+                    if pred and len(pred) == 5:
+                        results['yearly'] = [pred]
+                    else:
+                        results['yearly'] = [[10, 25, 45, 65, 80]]
+                except:
+                    results['yearly'] = [[10, 25, 45, 65, 80]]
 
         # Apply anti-pattern filtering to all predictions (with error handling)
         print("Applying anti-pattern filtering...")
@@ -1770,6 +2952,51 @@ class EnhancedLottoOracle:
             selected.extend([n for n, _ in remaining_scores[:5 - len(selected)]])
 
         return sorted(selected)
+    
+    def _boost_with_yearly_patterns(self, base_prediction: List[int]) -> List[int]:
+        """
+        Boost a base prediction with yearly pattern data.
+        Replaces some numbers with yearly pattern candidates.
+        """
+        if not self._yearly_analysis or 'patterns' not in self._yearly_analysis:
+            return base_prediction
+        
+        patterns = self._yearly_analysis['patterns']
+        if not patterns:
+            return base_prediction
+        
+        # Collect high-confidence pattern numbers
+        pattern_candidates = Counter()
+        for pattern in patterns:
+            confidence = pattern.get('confidence', 0)
+            for num in pattern.get('numbers', []):
+                pattern_candidates[num] += confidence
+        
+        if not pattern_candidates:
+            return base_prediction
+        
+        # Get top pattern numbers
+        top_pattern_nums = [n for n, _ in pattern_candidates.most_common(10)]
+        
+        # Boost prediction: replace 2 numbers with pattern candidates
+        boosted = base_prediction.copy()
+        replacements = 0
+        
+        for num in top_pattern_nums:
+            if num not in boosted and replacements < 2:
+                # Replace the number with lowest pattern score
+                min_score_idx = 0
+                min_score = pattern_candidates.get(boosted[0], 0)
+                for i, n in enumerate(boosted):
+                    score = pattern_candidates.get(n, 0)
+                    if score < min_score:
+                        min_score = score
+                        min_score_idx = i
+                
+                boosted[min_score_idx] = num
+                replacements += 1
+        
+        return sorted(boosted)
     
     def _extract_consensus_numbers(self, predictions: Dict[str, List[List[int]]], 
                                    n_numbers: int = 2) -> List[int]:

@@ -24,6 +24,16 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error: AxiosError<ApiResponse>) => {
+    // Handle timeout errors specifically
+    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+      const timeoutError = new ApiError(
+        'Request timed out. The operation is taking longer than expected. Please try again.',
+        0,
+        'TIMEOUT_ERROR'
+      );
+      return Promise.reject(timeoutError);
+    }
+    
     // Handle network errors (backend not running)
     if (!error.response && error.request) {
       const networkError = new ApiError(
@@ -332,9 +342,12 @@ export const predictionsApi = {
       searchParams.useTypeSpecificTable = params.useTypeSpecificTable.toString();
     }
 
+    // Use same max timeout as backend (5 minutes) to ensure frontend never times out before backend
+    // Backend calculates: baseTimeout(30s) + additionalTime(0.5s per draw above 60) * strategyMultiplier
+    // Max is capped at 5 minutes (300000ms) on backend
     const response = await api.post<ApiResponse<PredictionResponse>>('/predictions/generate', {}, {
       params: searchParams,
-      timeout: 60000, // 60 seconds for predictions
+      timeout: 300000, // 5 minutes - matches backend max timeout
     });
     if (!response.data.success || !response.data.data) {
       throw new ApiError(response.data.error || 'Failed to generate predictions');

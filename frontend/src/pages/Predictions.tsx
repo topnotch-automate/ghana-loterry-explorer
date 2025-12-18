@@ -37,6 +37,11 @@ const strategyInfo: Record<PredictionStrategy, { icon: string; description: stri
     description: 'Advanced intelligence engine using machine numbers, temporal memory, lag signatures, and relationship analysis',
     color: 'from-indigo-500 to-purple-500',
   },
+  yearly: {
+    icon: '📅',
+    description: 'Cross-year pattern analysis using Law of Large Numbers - detects recurring patterns across years',
+    color: 'from-amber-500 to-yellow-500',
+  },
 };
 
 // Interface for saved special predictions (matching Dashboard)
@@ -407,7 +412,7 @@ export const Predictions: React.FC = () => {
           <h2 className="text-xl font-semibold text-gray-800">Prediction Strategy</h2>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {(['ensemble', 'ml', 'genetic', 'pattern', 'intelligence'] as PredictionStrategy[]).map((strat) => {
+          {(['ensemble', 'ml', 'genetic', 'pattern', 'intelligence', 'yearly'] as PredictionStrategy[]).map((strat) => {
             const info = strategyInfo[strat];
             const isSelected = strategy === strat;
             return (
@@ -747,6 +752,15 @@ export const Predictions: React.FC = () => {
                     title="Intelligence Prediction"
                     prediction={predictions.predictions.intelligence[0]}
                     strategy="intelligence"
+                  />
+                </div>
+              )}
+              {predictions.predictions.yearly && predictions.predictions.yearly.length > 0 && (
+                <div className="animate-slide-up" style={{ animationDelay: '500ms' }}>
+                  <PredictionCard
+                    title="Yearly Pattern Prediction"
+                    prediction={predictions.predictions.yearly[0]}
+                    strategy="yearly"
                   />
                 </div>
               )}

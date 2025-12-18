@@ -6,7 +6,9 @@ import type { Draw } from '../types/index.ts';
 interface PredictionRequest {
   draws: number[][];
   machine_draws?: number[][]; // Machine numbers for intelligence engine
-  strategy: 'ensemble' | 'ml' | 'genetic' | 'pattern' | 'intelligence';
+  draw_dates?: string[]; // Draw dates for yearly pattern analysis
+  lotto_types?: string[]; // Lotto types for yearly pattern analysis (matches draw_dates)
+  strategy: 'ensemble' | 'ml' | 'genetic' | 'pattern' | 'intelligence' | 'yearly';
   n_predictions?: number;
 }
 
@@ -83,10 +85,11 @@ export class PredictionService {
    */
   private convertDrawsToPythonFormat(
     draws: Draw[], 
-    strategy?: 'ensemble' | 'ml' | 'genetic' | 'pattern' | 'intelligence'
+    strategy?: 'ensemble' | 'ml' | 'genetic' | 'pattern' | 'intelligence' | 'yearly'
   ): { 
     winning: number[][]; 
     machine: number[][];
+    lotto_types?: string[];
     filteredCount?: number;
   } {
     // For intelligence strategy, filter to only include draws with valid machine numbers
@@ -112,6 +115,7 @@ export class PredictionService {
       // Map and filter in pairs to keep arrays aligned
       const winning: number[][] = [];
       const machine: number[][] = [];
+      const lotto_types: string[] = [];
       
       for (const draw of filtered) {
         if (!draw.winningNumbers || !Array.isArray(draw.winningNumbers) || draw.winningNumbers.length === 0) {
@@ -124,11 +128,13 @@ export class PredictionService {
         }
         winning.push([...draw.winningNumbers].sort((a, b) => a - b));
         machine.push([...draw.machineNumbers].sort((a, b) => a - b));
+        lotto_types.push(draw.lottoType || '');
       }
       
       return {
         winning,
         machine,
+        lotto_types,
         filteredCount: winning.length,
       };
     }
@@ -136,6 +142,7 @@ export class PredictionService {
     // For other strategies, include all draws (machine numbers optional)
     const winning: number[][] = [];
     const machine: number[][] = [];
+    const lotto_types: string[] = [];
     
     for (const draw of draws) {
       if (!draw.winningNumbers || !Array.isArray(draw.winningNumbers) || draw.winningNumbers.length === 0) {
@@ -150,9 +157,11 @@ export class PredictionService {
       } else {
         machine.push([...draw.machineNumbers].sort((a, b) => a - b));
       }
+      
+      lotto_types.push(draw.lottoType || '');
     }
     
-    return { winning, machine };
+    return { winning, machine, lotto_types };
   }
 
   /**
@@ -226,7 +235,7 @@ export class PredictionService {
    */
   async generatePredictions(
     draws: Draw[],
-    strategy: 'ensemble' | 'ml' | 'genetic' | 'pattern' | 'intelligence' = 'ensemble',
+    strategy: 'ensemble' | 'ml' | 'genetic' | 'pattern' | 'intelligence' | 'yearly' = 'ensemble',
     n_predictions: number = 3
   ): Promise<PredictionResponse> {
     try {
@@ -241,6 +250,7 @@ export class PredictionService {
       const converted = this.convertDrawsToPythonFormat(draws, strategy);
       let winning = converted.winning;
       let machine = converted.machine;
+      let lotto_types = converted.lotto_types || [];
       const filteredCount = converted.filteredCount;
 
       // Validate that we have valid data after conversion
@@ -277,8 +287,12 @@ export class PredictionService {
       }
       
       // Validate that all winning arrays have 5 numbers
+      // Track original indices to maintain alignment with dates and lotto types
       const validWinning: number[][] = [];
       const validMachine: number[][] = [];
+      const validLottoTypes: string[] = [];
+      const validIndices: number[] = []; // Track which original indices were kept
+      
       for (let i = 0; i < winning.length; i++) {
         // Safely check if winning[i] exists and is valid
         const winDraw = winning[i];
@@ -294,6 +308,10 @@ export class PredictionService {
             } else {
               validMachine.push([0, 0, 0, 0, 0]);
             }
+            // Track this index for date/lotto type extraction
+            validIndices.push(i);
+            // Add corresponding lotto type
+            validLottoTypes.push(lotto_types[i] || '');
           } else {
             logger.warn(`Skipping winning draw at index ${i}: contains invalid numbers`);
           }
@@ -304,6 +322,7 @@ export class PredictionService {
       
       winning = validWinning;
       machine = validMachine;
+      lotto_types = validLottoTypes;
       
       // Final validation after cleanup
       if (winning.length === 0) {
@@ -313,10 +332,57 @@ export class PredictionService {
         );
       }
 
+      // Extract draw dates aligned with validated winning array
+      // Since lotto_types is already aligned with winning (from conversion), 
+      // extract dates in the same order from original draws
+      const drawDates: string[] = [];
+      
+      // Extract dates from original draws in the order they were processed
+      // Only include draws that have valid winning numbers (same filter as conversion)
+      let processedCount = 0;
+      for (const draw of draws) {
+        if (processedCount >= winning.length) break;
+        
+        // Same validation as in convertDrawsToPythonFormat
+        if (draw.winningNumbers && Array.isArray(draw.winningNumbers) && draw.winningNumbers.length === 5) {
+          // Check if this draw's numbers match the current valid winning entry
+          const drawNumbers = [...draw.winningNumbers].sort((a, b) => a - b);
+          const currentWinning = winning[processedCount];
+          
+          // Match by comparing sorted arrays
+          if (JSON.stringify(drawNumbers) === JSON.stringify(currentWinning)) {
+            const date = draw.drawDate instanceof Date 
+              ? draw.drawDate.toISOString().split('T')[0]
+              : String(draw.drawDate).split('T')[0];
+            drawDates.push(date);
+            processedCount++;
+          }
+        }
+      }
+      
+      // Fallback: if alignment failed, extract in simple order
+      if (drawDates.length !== winning.length) {
+        drawDates.length = 0;
+        let drawIndex = 0;
+        for (const draw of draws) {
+          if (draw.winningNumbers && Array.isArray(draw.winningNumbers) && draw.winningNumbers.length === 5) {
+            if (drawIndex < winning.length) {
+              const date = draw.drawDate instanceof Date 
+                ? draw.drawDate.toISOString().split('T')[0]
+                : String(draw.drawDate).split('T')[0];
+              drawDates.push(date);
+              drawIndex++;
+            }
+          }
+        }
+      }
+
       // Call Python service
       const request: PredictionRequest = {
         draws: winning,
         machine_draws: machine, // Include machine numbers for intelligence engine
+        draw_dates: strategy === 'yearly' ? drawDates : undefined, // Include dates for yearly strategy
+        lotto_types: strategy === 'yearly' ? lotto_types : undefined, // Include lotto types for yearly strategy
         strategy,
         n_predictions,
       };

@@ -196,25 +196,34 @@ export const Dashboard: React.FC = () => {
     }
   };
 
-  // Handle checking all predictions against draws (reset and recheck for accuracy)
+  // Handle checking all UNCHECKED predictions against draws
+  // Does NOT reset already checked predictions - only checks pending ones
   const handleCheckPredictions = async () => {
     try {
       setCheckingPredictions(true);
       setCheckResult(null);
+
+      // Use check-all which only checks unchecked predictions (doesn't reset properly checked ones)
+      const result = await predictionsApi.checkAllPredictions();
       
-      // Use reset-and-recheck to ensure correct matching by lotto type
-      const result = await predictionsApi.resetAndRecheck();
-      setCheckResult({
-        message: `Reset ${result.resetCount} and checked ${result.totalChecked} predictions`,
-        totalChecked: result.totalChecked,
-      });
-      
+      if (result.totalChecked > 0) {
+        setCheckResult({
+          message: `Checked ${result.totalChecked} prediction(s)`,
+          totalChecked: result.totalChecked,
+        });
+      } else {
+        setCheckResult({
+          message: 'All predictions are already checked',
+          totalChecked: 0,
+        });
+      }
+
       // Refresh the saved predictions to show updated matches
       if (isAuthenticated) {
         const history = await predictionsApi.getHistory(10);
         setSavedPredictions(history);
       }
-      
+
       setTimeout(() => setCheckResult(null), 5000);
     } catch (err) {
       console.error('Failed to check predictions:', err);
