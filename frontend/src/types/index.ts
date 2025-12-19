@@ -82,6 +82,8 @@ export interface PredictionResponse {
     pattern?: PredictionSet[];
     ensemble?: PredictionSet[];
     intelligence?: PredictionSet[]; // Added for intelligence strategy
+    yearly?: PredictionSet[]; // Added for yearly pattern strategy
+    transfer?: PredictionSet[]; // Added for transfer pattern strategy
     two_sure?: TwoSureThreeDirect; // Two Sure feature - 2 most likely numbers
     three_direct?: TwoSureThreeDirect; // Three Direct feature - 3 most likely numbers
   };
@@ -101,7 +103,7 @@ export interface SubscriptionStatus {
   email?: string;
 }
 
-export type PredictionStrategy = 'ensemble' | 'ml' | 'genetic' | 'pattern' | 'intelligence';
+export type PredictionStrategy = 'ensemble' | 'ml' | 'genetic' | 'pattern' | 'intelligence' | 'yearly' | 'transfer';
 
 export interface SavedPrediction {
   id: string;

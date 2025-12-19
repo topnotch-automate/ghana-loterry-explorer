@@ -42,6 +42,11 @@ const strategyInfo: Record<PredictionStrategy, { icon: string; description: stri
     description: 'Cross-year pattern analysis using Law of Large Numbers - detects recurring patterns across years',
     color: 'from-amber-500 to-yellow-500',
   },
+  transfer: {
+    icon: '🔄',
+    description: 'Detects when patterns from one context (lotto type, year, month) repeat in another - cross-context pattern matching',
+    color: 'from-teal-500 to-cyan-500',
+  },
 };
 
 // Interface for saved special predictions (matching Dashboard)
@@ -412,7 +417,7 @@ export const Predictions: React.FC = () => {
           <h2 className="text-xl font-semibold text-gray-800">Prediction Strategy</h2>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {(['ensemble', 'ml', 'genetic', 'pattern', 'intelligence', 'yearly'] as PredictionStrategy[]).map((strat) => {
+          {(['ensemble', 'ml', 'genetic', 'pattern', 'intelligence', 'yearly', 'transfer'] as PredictionStrategy[]).map((strat) => {
             const info = strategyInfo[strat];
             const isSelected = strategy === strat;
             return (
@@ -761,6 +766,16 @@ export const Predictions: React.FC = () => {
                     title="Yearly Pattern Prediction"
                     prediction={predictions.predictions.yearly[0]}
                     strategy="yearly"
+                  />
+                </div>
+              )}
+
+              {predictions.predictions.transfer && predictions.predictions.transfer.length > 0 && (
+                <div className="animate-slide-up" style={{ animationDelay: '550ms' }}>
+                  <PredictionCard
+                    title="Transfer Pattern Prediction"
+                    prediction={predictions.predictions.transfer[0]}
+                    strategy="transfer"
                   />
                 </div>
               )}

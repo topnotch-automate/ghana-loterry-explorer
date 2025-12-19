@@ -1557,6 +1557,272 @@ class MLYearlyPredictor:
 
 
 # ============================================================================
+# TRANSFER PATTERN ANALYZER - Cross-Context Pattern Detection
+# ============================================================================
+
+class TransferPatternAnalyzer:
+    """
+    Detects pattern transfers: when a sequence from one context (lotto type, year, period)
+    repeats in another context. Uses this to predict continuations.
+    
+    Example: A pattern from Feb 2022 in lottery A repeats in Oct 2025 in lottery B.
+    """
+    
+    def __init__(self):
+        self.historical_sequences = []  # List of (context, sequence, continuation)
+        self.transfer_patterns = []  # Detected transfers
+        self.sequence_length = 3  # How many draws to use as pattern signature
+        
+    def extract_sequences(self, draws: List[List[int]], dates: List[str] = None, 
+                         lotto_types: List[str] = None) -> List[Dict]:
+        """
+        Extract sequences of consecutive draws with their contexts.
+        Returns list of {context, sequence, continuation}
+        """
+        sequences = []
+        
+        for i in range(len(draws) - self.sequence_length):
+            # Extract sequence and continuation
+            sequence = draws[i:i + self.sequence_length]
+            continuation = draws[i + self.sequence_length] if i + self.sequence_length < len(draws) else None
+            
+            if not continuation:
+                continue
+            
+            # Build context
+            context = {}
+            if dates and i < len(dates):
+                try:
+                    from datetime import datetime
+                    date = datetime.strptime(dates[i][:10], '%Y-%m-%d')
+                    context['year'] = date.year
+                    context['month'] = date.month
+                    context['season'] = (date.month - 1) // 3 + 1  # 1=Q1, 2=Q2, etc.
+                    context['week_of_year'] = date.isocalendar()[1]
+                except:
+                    pass
+            
+            if lotto_types and i < len(lotto_types):
+                context['lotto_type'] = lotto_types[i]
+            
+            sequences.append({
+                'context': context,
+                'sequence': sequence,
+                'continuation': continuation,
+                'index': i
+            })
+        
+        return sequences
+    
+    def calculate_sequence_similarity(self, seq1: List[List[int]], seq2: List[List[int]]) -> float:
+        """
+        Calculate similarity between two sequences of draws.
+        Uses Jaccard similarity with positional weighting.
+        """
+        if len(seq1) != len(seq2):
+            return 0.0
+        
+        similarities = []
+        for draw1, draw2 in zip(seq1, seq2):
+            set1, set2 = set(draw1), set(draw2)
+            intersection = len(set1 & set2)
+            union = len(set1 | set2)
+            jaccard = intersection / union if union > 0 else 0
+            similarities.append(jaccard)
+        
+        # Weighted average: more recent draws in sequence have higher weight
+        weights = [0.5, 0.75, 1.0][:len(similarities)]  # More weight to recent
+        weighted_sim = sum(s * w for s, w in zip(similarities, weights)) / sum(weights)
+        
+        return weighted_sim
+    
+    def detect_transfer_patterns(self, sequences: List[Dict], 
+                                 similarity_threshold: float = 0.6) -> List[Dict]:
+        """
+        Detect when patterns from one context appear in another context.
+        """
+        transfers = []
+        
+        for i, seq1 in enumerate(sequences):
+            for j, seq2 in enumerate(sequences[i + 10:], start=i + 10):  # Skip nearby draws
+                # Calculate similarity
+                similarity = self.calculate_sequence_similarity(
+                    seq1['sequence'], 
+                    seq2['sequence']
+                )
+                
+                if similarity >= similarity_threshold:
+                    # Check if contexts are different (transfer)
+                    ctx1 = seq1['context']
+                    ctx2 = seq2['context']
+                    
+                    context_diff = False
+                    if ctx1.get('lotto_type') != ctx2.get('lotto_type'):
+                        context_diff = True
+                    elif ctx1.get('year') != ctx2.get('year'):
+                        context_diff = True
+                    elif abs(ctx1.get('month', 0) - ctx2.get('month', 0)) > 2:
+                        context_diff = True
+                    
+                    if context_diff or j - i > 50:  # Also count temporal distance
+                        transfers.append({
+                            'source_index': i,
+                            'target_index': j,
+                            'source_context': ctx1,
+                            'target_context': ctx2,
+                            'similarity': similarity,
+                            'source_sequence': seq1['sequence'],
+                            'target_sequence': seq2['sequence'],
+                            'source_continuation': seq1['continuation'],
+                            'target_continuation': seq2['continuation'],
+                            'continuation_similarity': self.calculate_sequence_similarity(
+                                [seq1['continuation']], [seq2['continuation']]
+                            )
+                        })
+        
+        # Sort by similarity
+        transfers.sort(key=lambda x: x['similarity'], reverse=True)
+        return transfers
+    
+    def find_matching_transfers(self, current_sequence: List[List[int]], 
+                                current_context: Dict,
+                                min_similarity: float = 0.5) -> List[Dict]:
+        """
+        Find historical patterns that match the current sequence.
+        Returns potential continuations based on transfer patterns.
+        """
+        matches = []
+        
+        for transfer in self.transfer_patterns:
+            # Check if current sequence matches the target sequence of a known transfer
+            similarity = self.calculate_sequence_similarity(
+                current_sequence,
+                transfer['target_sequence']
+            )
+            
+            if similarity >= min_similarity:
+                # Calculate context similarity
+                ctx_sim = self._calculate_context_similarity(
+                    current_context,
+                    transfer['target_context']
+                )
+                
+                matches.append({
+                    'transfer': transfer,
+                    'sequence_similarity': similarity,
+                    'context_similarity': ctx_sim,
+                    'overall_score': similarity * 0.7 + ctx_sim * 0.3,
+                    'predicted_continuation': transfer['target_continuation']
+                })
+        
+        matches.sort(key=lambda x: x['overall_score'], reverse=True)
+        return matches
+    
+    def _calculate_context_similarity(self, ctx1: Dict, ctx2: Dict) -> float:
+        """Calculate similarity between two contexts."""
+        score = 0.0
+        count = 0
+        
+        # Lotto type match
+        if 'lotto_type' in ctx1 and 'lotto_type' in ctx2:
+            score += 1.0 if ctx1['lotto_type'] == ctx2['lotto_type'] else 0.0
+            count += 1
+        
+        # Season match
+        if 'season' in ctx1 and 'season' in ctx2:
+            score += 1.0 if ctx1['season'] == ctx2['season'] else 0.3
+            count += 1
+        
+        # Month proximity
+        if 'month' in ctx1 and 'month' in ctx2:
+            month_diff = abs(ctx1['month'] - ctx2['month'])
+            score += max(0, 1.0 - month_diff / 12.0)
+            count += 1
+        
+        return score / count if count > 0 else 0.5
+    
+    def analyze(self, draws: List[List[int]], dates: List[str] = None,
+               lotto_types: List[str] = None) -> Dict:
+        """
+        Analyze all draws to extract sequences and detect transfer patterns.
+        """
+        print("Analyzing transfer patterns...")
+        
+        # Extract all sequences
+        sequences = self.extract_sequences(draws, dates, lotto_types)
+        print(f"Extracted {len(sequences)} sequences")
+        
+        # Detect transfers
+        self.transfer_patterns = self.detect_transfer_patterns(sequences)
+        print(f"Detected {len(self.transfer_patterns)} transfer patterns")
+        
+        # Store for later use
+        self.historical_sequences = sequences
+        
+        return {
+            'total_sequences': len(sequences),
+            'transfer_patterns_found': len(self.transfer_patterns),
+            'top_transfers': self.transfer_patterns[:10]  # Top 10 for inspection
+        }
+    
+    def predict(self, recent_draws: List[List[int]], current_date: str = None,
+               current_lotto_type: str = None) -> List[Dict]:
+        """
+        Predict next draw based on transfer pattern matching.
+        """
+        if len(recent_draws) < self.sequence_length:
+            return []
+        
+        # Get current sequence (last N draws)
+        current_sequence = recent_draws[-self.sequence_length:]
+        
+        # Build current context
+        current_context = {}
+        if current_date:
+            try:
+                from datetime import datetime
+                date = datetime.strptime(current_date[:10], '%Y-%m-%d')
+                current_context['year'] = date.year
+                current_context['month'] = date.month
+                current_context['season'] = (date.month - 1) // 3 + 1
+            except:
+                pass
+        
+        if current_lotto_type:
+            current_context['lotto_type'] = current_lotto_type
+        
+        # Find matching transfers
+        matches = self.find_matching_transfers(current_sequence, current_context)
+        
+        if not matches:
+            return []
+        
+        # Aggregate predictions from top matches
+        prediction_scores = Counter()
+        
+        for match in matches[:5]:  # Top 5 matches
+            predicted = match['predicted_continuation']
+            weight = match['overall_score']
+            
+            for num in predicted:
+                prediction_scores[num] += weight
+        
+        # Get top 5 numbers
+        top_numbers = sorted([n for n, _ in prediction_scores.most_common(5)])
+        
+        if len(top_numbers) == 5:
+            return [{
+                'numbers': top_numbers,
+                'confidence': matches[0]['overall_score'],
+                'source': 'transfer',
+                'matches_used': len(matches[:5]),
+                'best_match_similarity': matches[0]['sequence_similarity']
+            }]
+        
+        return []
+
+
+# ============================================================================
 # YEARLY PATTERN ANALYZER - Law of Large Numbers Approach
 # ============================================================================
 
@@ -2155,6 +2421,9 @@ class EnhancedLottoOracle:
         
         # Yearly Pattern Analyzer for cross-year analysis
         self.yearly_analyzer = YearlyPatternAnalyzer()
+        
+        # Transfer Pattern Analyzer for cross-context pattern detection
+        self.transfer_analyzer = TransferPatternAnalyzer()
 
         # State tracking
         self.performance_history = []
@@ -2167,6 +2436,7 @@ class EnhancedLottoOracle:
         self._trend_data = None
         self._position_analysis = None
         self._yearly_analysis = None
+        self._transfer_analysis = None
 
         # Initialize
         self._initialize_system()
@@ -2237,6 +2507,19 @@ class EnhancedLottoOracle:
         except Exception as e:
             print(f"⚠️ Yearly analysis failed: {e}")
             self._yearly_analysis = {}
+        
+        # Initialize transfer pattern analyzer
+        try:
+            self._transfer_analysis = self.transfer_analyzer.analyze(
+                self.historical,
+                self.draw_dates,
+                self.lotto_types
+            )
+            transfer_count = self._transfer_analysis.get('transfer_patterns_found', 0)
+            print(f"✅ Transfer analysis: {transfer_count} pattern transfers detected")
+        except Exception as e:
+            print(f"⚠️ Transfer analysis failed: {e}")
+            self._transfer_analysis = {}
 
     def generate_predictions(self, strategy: str = 'ensemble',
                              n_predictions: int = 3,
@@ -2246,6 +2529,11 @@ class EnhancedLottoOracle:
 
         Returns: Dict with strategy as key and list of number sets
         """
+        print(f"===== GENERATE_PREDICTIONS START =====")
+        print(f"DEBUG: generate_predictions called with strategy='{strategy}'")
+        print(f"DEBUG: strategy repr: {repr(strategy)}")
+        print(f"DEBUG: strategy bytes: {strategy.encode('utf-8')}")
+        
         # Create deterministic seed from input data
         # Hash the historical data to create a stable seed
         data_str = str(sorted([tuple(sorted(d)) for d in self.historical]))
@@ -2258,6 +2546,12 @@ class EnhancedLottoOracle:
         # Get historical patterns
         recent = self.historical[-50:] if len(self.historical) >= 50 else self.historical
         patterns = self._analyze_patterns(recent)
+        
+        print(f"DEBUG: Checking strategy blocks...")
+        print(f"DEBUG: strategy value: '{strategy}', type: {type(strategy)}")
+        print(f"DEBUG: strategy == 'transfer': {strategy == 'transfer'}")
+        print(f"DEBUG: strategy == 'yearly': {strategy == 'yearly'}")
+        print(f"DEBUG: strategy == 'intelligence': {strategy == 'intelligence'}")
 
         if strategy == 'ensemble' or strategy == 'all':
             # Generate using multiple methods
@@ -2551,6 +2845,111 @@ class EnhancedLottoOracle:
                 except:
                     results['yearly'] = [[10, 25, 45, 65, 80]]
 
+        elif strategy == 'transfer':
+            print(f"DEBUG: Entered transfer strategy block")
+            # Transfer Pattern Strategy - detects patterns from one context repeating in another
+            # Works across different lotto types, years, and months
+            print("Generating transfer pattern predictions...")
+            transfer_pred = None
+            try:
+                # Get current date and lotto type for context
+                from datetime import datetime
+                current_date = datetime.now().strftime('%Y-%m-%d')
+                current_lotto_type = self.lotto_types[-1] if self.lotto_types and len(self.lotto_types) > 0 else None
+                
+                # Use transfer analyzer to predict
+                transfer_predictions = self.transfer_analyzer.predict(
+                    self.historical,
+                    current_date,
+                    current_lotto_type
+                )
+                
+                if transfer_predictions and len(transfer_predictions) > 0:
+                    best_transfer = transfer_predictions[0]
+                    transfer_pred = best_transfer.get('numbers', [])
+                    
+                    if transfer_pred and len(transfer_pred) == 5:
+                        confidence = best_transfer.get('confidence', 0)
+                        matches = best_transfer.get('matches_used', 0)
+                        similarity = best_transfer.get('best_match_similarity', 0)
+                        print(f"Transfer prediction: {transfer_pred}")
+                        print(f"  Confidence: {confidence:.2%}")
+                        print(f"  Matches used: {matches}")
+                        print(f"  Best similarity: {similarity:.2%}")
+                    else:
+                        print(f"Warning: Invalid transfer prediction: {transfer_pred}")
+                        transfer_pred = None
+                else:
+                    print("No transfer patterns matched current sequence")
+                
+                # Fallback 1: Boost with intelligence engine if available
+                if not transfer_pred:
+                    print("Using intelligence-boosted fallback...")
+                    if machine_draws and len(machine_draws) == len(self.historical):
+                        try:
+                            import sys
+                            import os
+                            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+                            from intelligenceEngine import IntelligenceEngine
+                            intel_engine = IntelligenceEngine(self.historical, machine_draws, seed=seed)
+                            transfer_pred = intel_engine.predict('balanced')
+                            print(f"Intelligence fallback: {transfer_pred}")
+                        except Exception as e:
+                            print(f"Intelligence fallback failed: {e}")
+                
+                # Fallback 2: Yearly pattern boost
+                if not transfer_pred or len(transfer_pred) != 5:
+                    print("Using yearly pattern fallback...")
+                    if self._yearly_analysis and 'predictions' in self._yearly_analysis:
+                        yearly_preds = self._yearly_analysis['predictions']
+                        if yearly_preds and len(yearly_preds) > 0:
+                            transfer_pred = yearly_preds[0].get('numbers', [])
+                            print(f"Yearly fallback: {transfer_pred}")
+                
+                # Fallback 3: ML-based prediction
+                if not transfer_pred or len(transfer_pred) != 5:
+                    print("Using ML fallback...")
+                    transfer_pred = self._ml_based_prediction(patterns)
+                    print(f"ML fallback: {transfer_pred}")
+                
+                # Fallback 4: Pattern-based
+                if not transfer_pred or len(transfer_pred) != 5:
+                    print("Using pattern fallback...")
+                    transfer_pred = self._pattern_based_prediction(patterns)
+                    print(f"Pattern fallback: {transfer_pred}")
+                
+                # Fallback 5: Frequency-based
+                if not transfer_pred or len(transfer_pred) != 5:
+                    print("Using frequency fallback...")
+                    from collections import Counter
+                    all_numbers = []
+                    for draw in self.historical:
+                        all_numbers.extend(draw)
+                    freq = Counter(all_numbers)
+                    transfer_pred = sorted([n for n, _ in freq.most_common(5)])
+                    print(f"Frequency fallback: {transfer_pred}")
+                
+                # Final validation
+                if transfer_pred and len(transfer_pred) == 5 and all(1 <= n <= 90 for n in transfer_pred):
+                    results['transfer'] = [transfer_pred]
+                else:
+                    print(f"ERROR: All fallbacks failed, using default [5, 20, 40, 60, 85]")
+                    results['transfer'] = [[5, 20, 40, 60, 85]]
+                    
+            except Exception as e:
+                import traceback
+                print(f"Transfer strategy failed with exception: {e}")
+                print(traceback.format_exc())
+                # Emergency fallback
+                try:
+                    pred = self._pattern_based_prediction(patterns)
+                    if pred and len(pred) == 5:
+                        results['transfer'] = [pred]
+                    else:
+                        results['transfer'] = [[5, 20, 40, 60, 85]]
+                except:
+                    results['transfer'] = [[5, 20, 40, 60, 85]]
+
         # Apply anti-pattern filtering to all predictions (with error handling)
         print("Applying anti-pattern filtering...")
         try:
@@ -2642,6 +3041,12 @@ class EnhancedLottoOracle:
             'confidence': confidence_scores
         })
 
+        print(f"===== GENERATE_PREDICTIONS END =====")
+        print(f"DEBUG: Final results keys: {list(results.keys())}")
+        print(f"DEBUG: Strategy was: '{strategy}'")
+        if strategy not in results and strategy not in ['ensemble', 'all']:
+            print(f"WARNING: Strategy '{strategy}' not found in results!")
+            print(f"  This means the strategy block did not execute or failed silently")
         print(f"DEBUG: Returning results with keys: {list(results.keys())}")
         return results
 

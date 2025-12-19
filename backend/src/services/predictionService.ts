@@ -6,9 +6,9 @@ import type { Draw } from '../types/index.ts';
 interface PredictionRequest {
   draws: number[][];
   machine_draws?: number[][]; // Machine numbers for intelligence engine
-  draw_dates?: string[]; // Draw dates for yearly pattern analysis
-  lotto_types?: string[]; // Lotto types for yearly pattern analysis (matches draw_dates)
-  strategy: 'ensemble' | 'ml' | 'genetic' | 'pattern' | 'intelligence' | 'yearly';
+  draw_dates?: string[]; // Draw dates for yearly and transfer pattern analysis
+  lotto_types?: string[]; // Lotto types for yearly and transfer pattern analysis (matches draw_dates)
+  strategy: 'ensemble' | 'ml' | 'genetic' | 'pattern' | 'intelligence' | 'yearly' | 'transfer';
   n_predictions?: number;
 }
 
@@ -235,7 +235,7 @@ export class PredictionService {
    */
   async generatePredictions(
     draws: Draw[],
-    strategy: 'ensemble' | 'ml' | 'genetic' | 'pattern' | 'intelligence' | 'yearly' = 'ensemble',
+    strategy: 'ensemble' | 'ml' | 'genetic' | 'pattern' | 'intelligence' | 'yearly' | 'transfer' = 'ensemble',
     n_predictions: number = 3
   ): Promise<PredictionResponse> {
     try {
@@ -381,8 +381,8 @@ export class PredictionService {
       const request: PredictionRequest = {
         draws: winning,
         machine_draws: machine, // Include machine numbers for intelligence engine
-        draw_dates: strategy === 'yearly' ? drawDates : undefined, // Include dates for yearly strategy
-        lotto_types: strategy === 'yearly' ? lotto_types : undefined, // Include lotto types for yearly strategy
+        draw_dates: (strategy === 'yearly' || strategy === 'transfer') ? drawDates : undefined, // Include dates for yearly and transfer strategies
+        lotto_types: (strategy === 'yearly' || strategy === 'transfer') ? lotto_types : undefined, // Include lotto types for yearly and transfer strategies
         strategy,
         n_predictions,
       };

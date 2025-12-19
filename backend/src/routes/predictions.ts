@@ -34,7 +34,7 @@ router.get('/health', async (req, res, next) => {
  * Generate predictions (Pro users only)
  * 
  * Query params:
- * - strategy: 'ensemble' | 'ml' | 'genetic' | 'pattern' | 'intelligence' (default: 'ensemble')
+ * - strategy: 'ensemble' | 'ml' | 'genetic' | 'pattern' | 'intelligence' | 'yearly' | 'transfer' (default: 'ensemble')
  * - limit: number of historical draws to use (default: all)
  * - lottoType: filter by lotto type
  * - useTypeSpecificTable: 'true' to use type-specific table for better accuracy (default: 'false')
@@ -66,7 +66,7 @@ router.post('/generate', requireAuth, requirePro, async (req, res, next) => {
     // Generate predictions
     const predictions = await predictionService.generatePredictions(
       draws,
-      strategy as 'ensemble' | 'ml' | 'genetic' | 'pattern' | 'intelligence'
+      strategy as 'ensemble' | 'ml' | 'genetic' | 'pattern' | 'intelligence' | 'yearly' | 'transfer'
     );
 
     // Extract predicted numbers from the strategy-specific prediction set
@@ -653,34 +653,68 @@ router.post('/check-all', requireAuth, requirePro, async (req, res, next) => {
 
 /**
  * POST /api/predictions/reset-checks
- * Reset all checked predictions back to unchecked status so they can be re-checked
+ * Reset only IMPROPERLY checked predictions back to unchecked status
+ * 
+ * Does NOT reset predictions that were properly checked within the correct timeframe:
+ * - Checked within 24 hours after the target draw date
+ * - Has a valid matches value (win/partial/loss)
+ * 
  * (Pro users only)
  */
 router.post('/reset-checks', requireAuth, requirePro, async (req, res, next) => {
   try {
     const userId = req.user!.id;
-    logger.info(`Resetting checked predictions for user ${userId}`);
+    const forceReset = req.query.force === 'true'; // Allow force reset if explicitly requested
     
-    // Reset all checked predictions for this user back to unchecked
-    const result = await pool.query(
-      `UPDATE prediction_history 
-       SET is_checked = FALSE,
-           checked_at = NULL,
-           matches = NULL,
-           actual_draw_id = NULL
-       WHERE user_id = $1
-         AND is_checked = TRUE
-       RETURNING id`,
-      [userId]
-    );
+    logger.info(`Resetting checked predictions for user ${userId} (force: ${forceReset})`);
+
+    let result;
     
+    if (forceReset) {
+      // Force reset ALL checked predictions (only if explicitly requested)
+      result = await pool.query(
+        `UPDATE prediction_history
+         SET is_checked = FALSE,
+             checked_at = NULL,
+             matches = NULL,
+             actual_draw_id = NULL
+         WHERE user_id = $1
+           AND is_checked = TRUE
+         RETURNING id`,
+        [userId]
+      );
+    } else {
+      // Only reset improperly checked predictions
+      result = await pool.query(
+        `UPDATE prediction_history
+         SET is_checked = FALSE,
+             checked_at = NULL,
+             matches = NULL,
+             actual_draw_id = NULL
+         WHERE user_id = $1
+           AND is_checked = TRUE
+           AND (
+             -- Reset if no matches value
+             matches IS NULL
+             -- Reset if checked more than 2 days after the draw date
+             OR checked_at > (target_draw_date + INTERVAL '2 days')
+             -- Reset if checked before the draw date
+             OR checked_at < target_draw_date
+           )
+         RETURNING id`,
+        [userId]
+      );
+    }
+
     const resetCount = result.rows.length;
     logger.info(`Reset ${resetCount} predictions for user ${userId}`);
-    
+
     res.json({
       success: true,
       data: {
-        message: `Reset ${resetCount} predictions to unchecked status`,
+        message: resetCount > 0 
+          ? `Reset ${resetCount} predictions to unchecked status`
+          : 'All predictions are properly checked. Nothing to reset.',
         resetCount,
       },
     });
@@ -691,7 +725,16 @@ router.post('/reset-checks', requireAuth, requirePro, async (req, res, next) => 
 
 /**
  * POST /api/predictions/reset-and-recheck
- * Reset all checked predictions and immediately re-check them
+ * Reset ONLY improperly checked predictions and immediately re-check them
+ * 
+ * Properly checked predictions (that should NOT be reset):
+ * - Predictions checked within 24 hours after the target draw date
+ * - Predictions checked after 2 PM (for afternoon draws) or 9 PM (for evening draws)
+ * 
+ * Only resets predictions that:
+ * - Were never properly checked (matches is NULL but is_checked is TRUE - shouldn't happen)
+ * - Were checked more than 24 hours after the draw date
+ * 
  * (Pro users only)
  */
 router.post('/reset-and-recheck', requireAuth, requirePro, async (req, res, next) => {
@@ -699,7 +742,10 @@ router.post('/reset-and-recheck', requireAuth, requirePro, async (req, res, next
     const userId = req.user!.id;
     logger.info(`Reset and recheck triggered by user ${userId}`);
     
-    // Step 1: Reset all checked predictions for this user
+    // Only reset predictions that were NOT properly checked
+    // A properly checked prediction:
+    // - Has a valid matches value (0, 1, 2, 3, 4, or 5)
+    // - Was checked within 24 hours after the target draw date
     const resetResult = await pool.query(
       `UPDATE prediction_history 
        SET is_checked = FALSE,
@@ -708,20 +754,35 @@ router.post('/reset-and-recheck', requireAuth, requirePro, async (req, res, next
            actual_draw_id = NULL
        WHERE user_id = $1
          AND is_checked = TRUE
+         AND (
+           -- Reset if no matches value (shouldn't happen but safety check)
+           matches IS NULL
+           -- Reset if checked more than 2 days after the draw date (likely incorrect check)
+           OR checked_at > (target_draw_date + INTERVAL '2 days')
+           -- Reset if checked before the draw date (definitely wrong)
+           OR checked_at < target_draw_date
+         )
        RETURNING id`,
       [userId]
     );
     
     const resetCount = resetResult.rows.length;
-    logger.info(`Reset ${resetCount} predictions for user ${userId}`);
     
-    // Step 2: Run the check again
+    if (resetCount > 0) {
+      logger.info(`Reset ${resetCount} improperly checked predictions for user ${userId}`);
+    } else {
+      logger.info(`No improperly checked predictions found for user ${userId}. All predictions are properly checked.`);
+    }
+    
+    // Step 2: Run the check for any unchecked predictions
     const checkResult = await triggerManualCheck();
     
     res.json({
       success: true,
       data: {
-        message: `Reset ${resetCount} predictions and re-checked`,
+        message: resetCount > 0 
+          ? `Reset ${resetCount} improperly checked predictions and re-checked` 
+          : `All predictions properly checked. Checked ${checkResult.totalChecked} pending predictions.`,
         resetCount,
         totalChecked: checkResult.totalChecked,
         predictions: checkResult.predictions.map(p => ({

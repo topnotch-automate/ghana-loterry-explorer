@@ -264,11 +264,11 @@ def predict():
         if historical_draws_cache != draws_tuple or oracle_instance is None or (strategy == 'yearly' and dates_changed):
             historical_draws_cache = draws_tuple
             try:
-                # Pass draw_dates and lotto_types for yearly strategy
+                # Pass draw_dates and lotto_types for yearly and transfer strategies
                 initialize_oracle(
                     draws, 
-                    draw_dates if strategy == 'yearly' else None,
-                    lotto_types if strategy == 'yearly' else None
+                    draw_dates if strategy in ['yearly', 'transfer'] else None,
+                    lotto_types if strategy in ['yearly', 'transfer'] else None
                 )
             except Exception as e:
                 print(f"ERROR: Failed to initialize oracle: {e}")
@@ -313,7 +313,7 @@ def predict():
         
         # CRITICAL FIX: If strategy is intelligence/yearly and predictions dict is empty or missing the key,
         # provide a fallback immediately
-        if strategy in ['intelligence', 'yearly']:
+        if strategy in ['intelligence', 'yearly', 'transfer']:
             if not predictions or strategy not in predictions:
                 print(f"CRITICAL: {strategy} strategy but predictions dict is empty or missing {strategy} key!")
                 print(f"  predictions = {predictions}")
@@ -348,9 +348,9 @@ def predict():
                     }
                 continue
             
-            # Special handling for intelligence and yearly strategies - provide fallback if empty
+            # Special handling for intelligence, yearly, and transfer strategies - provide fallback if empty
             if not preds or len(preds) == 0:
-                if method in ['intelligence', 'yearly']:
+                if method in ['intelligence', 'yearly', 'transfer']:
                     print(f"ERROR: {method} strategy returned no predictions (preds: {preds})")
                     print(f"  This is a critical error - {method} strategy must return predictions")
                     # Provide a fallback prediction based on frequency

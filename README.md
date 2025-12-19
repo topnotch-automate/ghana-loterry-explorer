@@ -33,7 +33,7 @@ The system uses multiple AI strategies to generate predictions:
    - Pair Gravity Analysis
    - Family Cluster Detection
    - Number State Modeling
-6. **Yearly Pattern Strategy** (NEW): Cross-year pattern analysis using Law of Large Numbers:
+6. **Yearly Pattern Strategy**: Cross-year pattern analysis using Law of Large Numbers:
    - Analyzes draws organized by year
    - Detects recurring patterns across multiple years
    - Identifies stable "foundation" numbers that consistently appear
@@ -41,8 +41,18 @@ The system uses multiple AI strategies to generate predictions:
    - Detects cyclical patterns (numbers that appear in alternating years)
    - Works with limited data at the start of a new year
    - Leverages all previous years' data to inform current year predictions
+   - **ML Enhancement**: Uses RandomForest + GradientBoosting ensemble for feature extraction from previous years
+   - **Lotto Type Prioritization**: Same-date same-lotto-type patterns get highest weight (1.0), different types get lower weight (0.3)
 
-#### How Yearly Pattern Analysis Works
+7. **Transfer Pattern Strategy** (NEW): Cross-context pattern detection and prediction:
+   - Detects when a sequence of draws from one context repeats in another
+   - Contexts: lotto type, year, month, season
+   - Example: A 3-draw pattern from Feb 2022 in lottery A repeating in Oct 2025 in lottery B
+   - Leverages intelligence and yearly strategies for enhanced predictions
+   - Uses Jaccard similarity with positional weighting for pattern matching
+   - Combines multiple matched patterns for robust predictions
+
+#### How Transfer Pattern Analysis Works
 
 The lottery system follows the **Law of Large Numbers** - as more draws accumulate over years, patterns stabilize and become more predictable. The Yearly Pattern Analyzer:
 
@@ -55,6 +65,41 @@ The lottery system follows the **Law of Large Numbers** - as more draws accumula
    - **Trending Numbers**: Numbers with increasing frequency over years
    - **Stable Foundation Numbers**: Numbers that consistently appear across all years
 4. **Adapts to new year data**: Works even with limited draws at the start of a new year by weighting patterns from previous years
+5. **ML Feature Extraction**: Uses ensemble ML (RandomForest 60% + GradientBoosting 40%) to extract temporal features
+6. **Lotto Type Awareness**: Prioritizes same-date same-lotto-type patterns for higher accuracy
+
+#### Transfer Pattern Analysis Details
+
+The Transfer Pattern Strategy identifies when a sequence of consecutive draws from one context (lotto type, year, period) repeats in another context. This is based on the principle that lottery patterns can "transfer" across different contexts:
+
+1. **Sequence Extraction**: Extracts all 3-draw sequences from historical data with their contexts:
+   - Context includes: year, month, season, week of year, lotto type
+   - Example: Draws from 24/2/2022 to 26/2/2022 for Lotto Type A
+
+2. **Transfer Detection**: Compares all sequences to find similar patterns in different contexts:
+   - Uses Jaccard similarity with positional weighting (more recent draws in sequence weighted higher)
+   - Similarity threshold: 60%+ for pattern match
+   - Context difference: Different lotto types, years, or months (>2 months apart)
+
+3. **Pattern Matching**: When generating predictions:
+   - Takes the last 3 draws as current sequence
+   - Finds historical patterns that match the current sequence
+   - Retrieves what happened next in those historical patterns
+   - Weights matches by both sequence similarity (70%) and context similarity (30%)
+
+4. **Prediction Aggregation**: Combines multiple matched patterns:
+   - Aggregates numbers from top 5 matches
+   - Weights each by overall match score
+   - Selects top 5 numbers by weighted frequency
+
+5. **Multi-Level Fallbacks**: If no transfer patterns match:
+   - Intelligence engine (if machine draws available)
+   - Yearly patterns
+   - ML predictions
+   - Standard pattern analysis
+   - Frequency-based fallback
+
+**Example**: If draws from 24/2/2022 (8, 15, 22, 34, 56), 25/2/2022 (2, 19, 45, 67, 78), 26/2/2022 (10, 23, 40, 58, 90) for Lotto A are followed by (3, 17, 32, 55, 87), and this sequence pattern appears again in 5/10/2025 for Lotto B, the system predicts that similar numbers to (3, 17, 32, 55, 87) will appear next.
 
 #### Advanced Analyzers
 - **Zone Analysis**: Tracks number distribution across zones (1-10, 11-20, etc.)
