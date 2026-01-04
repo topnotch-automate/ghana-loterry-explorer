@@ -6,8 +6,8 @@
  * - 9:00 PM daily (after evening draws)
  */
 
-import pool from '../database/db.ts';
-import { logger } from '../utils/logger.ts';
+import pool from '../database/db.js';
+import { logger } from '../utils/logger.js';
 
 interface CheckResult {
   totalChecked: number;

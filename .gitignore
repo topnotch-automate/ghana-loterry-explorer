@@ -71,3 +71,5 @@ temp/
 .scraped-data.json
 backend/.scraper-state.json
 backend/.scraped-data.json
+.vercel
+.env*.local

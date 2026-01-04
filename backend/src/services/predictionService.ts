@@ -1,8 +1,8 @@
 import axios from 'axios';
-import { logger } from '../utils/logger.ts';
-import { config } from '../config/index.ts';
-import type { Draw } from '../types/index.ts';
-import pool from '../database/db.ts';
+import { logger } from '../utils/logger.js';
+import { config } from '../config/index.js';
+import type { Draw } from '../types/index.js';
+import pool from '../database/db.js';
 
 interface PredictionRequest {
   draws: number[][];
@@ -60,7 +60,8 @@ interface TrendAnalysis {
 interface PredictionResponse {
   success: boolean;
   predictions: {
-    [key: string]: Array<StandardPrediction> | SpecialPrediction;
+    [key: string]: Array<StandardPrediction> | SpecialPrediction | undefined;
+  } & {
     // Explicitly include intelligence for type safety
     intelligence?: Array<StandardPrediction>;
     // Special features: two_sure and three_direct are stored as objects, not arrays
@@ -94,7 +95,7 @@ export class PredictionService {
    */
   private convertDrawsToPythonFormat(
     draws: Draw[], 
-    strategy?: 'ensemble' | 'ml' | 'genetic' | 'pattern' | 'intelligence' | 'yearly'
+    strategy?: 'ensemble' | 'ml' | 'genetic' | 'pattern' | 'intelligence' | 'yearly' | 'transfer'
   ): { 
     winning: number[][]; 
     machine: number[][];
@@ -360,8 +361,8 @@ export class PredictionService {
           
           // Match by comparing sorted arrays
           if (JSON.stringify(drawNumbers) === JSON.stringify(currentWinning)) {
-            const date = draw.drawDate instanceof Date 
-              ? draw.drawDate.toISOString().split('T')[0]
+            const date = typeof draw.drawDate === 'string' 
+              ? draw.drawDate.split('T')[0]
               : String(draw.drawDate).split('T')[0];
             drawDates.push(date);
             processedCount++;
@@ -376,8 +377,8 @@ export class PredictionService {
         for (const draw of draws) {
           if (draw.winningNumbers && Array.isArray(draw.winningNumbers) && draw.winningNumbers.length === 5) {
             if (drawIndex < winning.length) {
-              const date = draw.drawDate instanceof Date 
-                ? draw.drawDate.toISOString().split('T')[0]
+              const date = typeof draw.drawDate === 'string' 
+                ? draw.drawDate.split('T')[0]
                 : String(draw.drawDate).split('T')[0];
               drawDates.push(date);
               drawIndex++;
@@ -635,8 +636,8 @@ export class PredictionService {
       for (const draw of draws) {
         if (draw.winningNumbers && Array.isArray(draw.winningNumbers) && draw.winningNumbers.length === 5) {
           if (drawIndex < winning.length) {
-            const date = draw.drawDate instanceof Date 
-              ? draw.drawDate.toISOString().split('T')[0]
+            const date = typeof draw.drawDate === 'string' 
+              ? draw.drawDate.split('T')[0]
               : String(draw.drawDate).split('T')[0];
             drawDates.push(date);
             drawIndex++;

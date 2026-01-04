@@ -63,7 +63,7 @@ export async function getAvailableLottoTypes(pool: any): Promise<string[]> {
   // Remove duplicates (case-insensitive) and sort
   const uniqueTypes = Array.from(
     new Map(types.map((type: string) => [type.toLowerCase(), type])).values()
-  ).sort();
+  ).sort() as string[];
   
   return uniqueTypes;
 }

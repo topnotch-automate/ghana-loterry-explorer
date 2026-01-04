@@ -1,4 +1,4 @@
-import jwt from 'jsonwebtoken';
+import jwt, { SignOptions } from 'jsonwebtoken';
 import { config } from '../config/index.js';
 
 export interface JWTPayload {
@@ -14,9 +14,12 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
  * Generate JWT token for user
  */
 export function generateToken(payload: JWTPayload): string {
+  if (!JWT_SECRET) {
+    throw new Error('JWT_SECRET is not configured');
+  }
   return jwt.sign(payload, JWT_SECRET, {
-    expiresIn: JWT_EXPIRES_IN,
-  });
+    expiresIn: JWT_EXPIRES_IN as string | number,
+  } as SignOptions);
 }
 
 /**

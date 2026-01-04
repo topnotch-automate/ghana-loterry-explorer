@@ -4,6 +4,12 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [react()],
+  optimizeDeps: {
+    include: ['react-window'],
+    esbuildOptions: {
+      target: 'es2020',
+    },
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -28,12 +34,17 @@ export default defineConfig({
     },
     // Generate source maps for better debugging (optional)
     sourcemap: false,
+    // CommonJS options for handling mixed module formats
+    commonjsOptions: {
+      transformMixedEsModules: true,
+    },
     // Chunk size optimization
     rollupOptions: {
       output: {
         manualChunks: {
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
           'chart-vendor': ['recharts'],
+          'window-vendor': ['react-window'],
         },
       },
     },
@@ -41,4 +52,3 @@ export default defineConfig({
   // SEO: Ensure public assets are properly served
   publicDir: 'public',
 })
-

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { drawsApi } from '../api/client';
+import { useQueryClient } from '@tanstack/react-query';
+import { drawsApi, analyticsApi } from '../api/client';
 import { FrequencyChart } from '../components/FrequencyChart';
 import { CoOccurrenceMatrix } from '../components/CoOccurrenceMatrix';
 import { LoadingSpinner } from '../components/LoadingSpinner';
@@ -16,6 +17,7 @@ import type { FrequencyStats, CoOccurrenceData } from '../types';
 
 export const Analytics: React.FC = () => {
   const [timeframe, setTimeframe] = useState<'30' | '365'>('30');
+  const queryClient = useQueryClient();
 
   // React Query hooks
   const { data: frequency30 = [], isLoading: loading30 } = useFrequencyStats(30);
@@ -23,15 +25,17 @@ export const Analytics: React.FC = () => {
   const { data: hotNumbers = [], isLoading: loadingHot } = useHotNumbers(30);
   const { data: coldNumbers = [], isLoading: loadingCold } = useColdNumbers(30);
   const { data: sleepingNumbers = [], isLoading: loadingSleeping } = useSleepingNumbers(30);
+  const coOccurrenceParams = {
+    limit: 50,
+    minCount: 2,
+    days: timeframe === '30' ? 30 : 365,
+  };
+  
   const { 
     data: coOccurrenceData = [], 
     isLoading: loadingCoOccurrence,
     refetch: refetchCoOccurrence
-  } = useCoOccurrence({
-    limit: 50,
-    minCount: 2,
-    days: timeframe === '30' ? 30 : 365,
-  });
+  } = useCoOccurrence(coOccurrenceParams);
 
   const loading = loading30 || loading365 || loadingHot || loadingCold || loadingSleeping;
   
@@ -260,9 +264,29 @@ export const Analytics: React.FC = () => {
             <h2 className="text-2xl font-bold text-gray-800">Co-Occurrence Analysis</h2>
           </div>
           <button
-            onClick={() => refetchCoOccurrence()}
+            onClick={async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              try {
+                // Directly fetch fresh data from API and update the cache
+                const freshData = await analyticsApi.getCoOccurrence(coOccurrenceParams);
+                // Update the query cache with fresh data
+                queryClient.setQueryData(
+                  ['analytics', 'co-occurrence', coOccurrenceParams.limit, coOccurrenceParams.minCount, coOccurrenceParams.days],
+                  freshData
+                );
+              } catch (error) {
+                console.error('Error refreshing co-occurrence data:', error);
+                // If direct fetch fails, try using refetch as fallback
+                try {
+                  await refetchCoOccurrence();
+                } catch (refetchError) {
+                  console.error('Refetch fallback also failed:', refetchError);
+                }
+              }
+            }}
             disabled={loadingCoOccurrence}
-            className="px-4 py-2 text-sm font-medium bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-50 hover:border-primary-300 transition-all flex items-center gap-2 disabled:opacity-50"
+            className="px-4 py-2 text-sm font-medium bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-50 hover:border-primary-300 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loadingCoOccurrence ? (
               <>

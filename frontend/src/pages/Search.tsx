@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { SearchBar } from '../components/SearchBar';
 import { DrawCard } from '../components/DrawCard';
 import { DrawModal } from '../components/DrawModal';
+import { ResponsiveVirtualList } from '../components/VirtualGrid';
+import { drawsApi } from '../api/client';
 import { handleApiError } from '../utils/errors';
 import { LOTTERY, UI } from '../utils/constants';
 import { useSearch, useAllDraws } from '../hooks/useSearch';

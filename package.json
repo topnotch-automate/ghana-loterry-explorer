@@ -24,7 +24,7 @@
     "analytics",
     "pattern-detection"
   ],
-  "author": "",
+  "author": "Lotto Oracle",
   "license": "MIT",
   "devDependencies": {
     "concurrently": "^8.2.2"

@@ -1,5 +1,4 @@
-import React, { useMemo } from 'react';
-import { FixedSizeGrid as Grid } from 'react-window';
+import React from 'react';
 
 interface VirtualGridProps<T> {
   items: T[];
@@ -24,6 +23,31 @@ export function VirtualGrid<T>({
   gap = 16,
   overscanCount = 5,
 }: VirtualGridProps<T>) {
+  const [GridComponent, setGridComponent] = React.useState<React.ComponentType<any> | null>(null);
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    // Dynamic import to handle CommonJS module properly
+    import('react-window')
+      .then((module) => {
+        // Try to get FixedSizeGrid - check multiple possible locations
+        const component = 
+          module.FixedSizeGrid || 
+          (module as any).FixedSizeGrid ||
+          (module as any).default?.FixedSizeGrid || 
+          (module as any)['FixedSizeGrid'];
+        
+        if (component) {
+          setGridComponent(component);
+        }
+        setIsLoading(false);
+      })
+      .catch((err) => {
+        console.error('Failed to load react-window:', err);
+        setIsLoading(false);
+      });
+  }, []);
+
   const rowCount = Math.ceil(items.length / columnCount);
 
   const Cell = ({ columnIndex, rowIndex, style }: { columnIndex: number; rowIndex: number; style: React.CSSProperties }) => {
@@ -56,8 +80,25 @@ export function VirtualGrid<T>({
     );
   }
 
+  // Show fallback grid while loading or if component not available
+  if (!GridComponent || isLoading) {
+    return (
+      <div className={`grid ${className}`} style={{ 
+        gridTemplateColumns: `repeat(${columnCount}, 1fr)`, 
+        gap: `${gap}px`,
+        height: 'auto'
+      }}>
+        {items.map((item, index) => (
+          <div key={index} style={{ width: itemWidth, height: itemHeight }}>
+            {renderItem(item, index)}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
-    <Grid
+    <GridComponent
       columnCount={columnCount}
       columnWidth={itemWidth}
       height={height}
@@ -68,7 +109,7 @@ export function VirtualGrid<T>({
       className={className}
     >
       {Cell}
-    </Grid>
+    </GridComponent>
   );
 }
 

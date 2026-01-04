@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import { drawService } from '../services/drawService.ts';
-import { predictionService } from '../services/predictionService.ts';
-import { triggerManualCheck } from '../services/predictionScheduler.ts';
-import { requireAuth, requirePro, optionalAuth } from '../middleware/auth.ts';
-import { logger } from '../utils/logger.ts';
-import pool from '../database/db.ts';
+import { drawService } from '../services/drawService.js';
+import { predictionService } from '../services/predictionService.js';
+import { triggerManualCheck } from '../services/predictionScheduler.js';
+import { requireAuth, requirePro, optionalAuth } from '../middleware/auth.js';
+import { logger } from '../utils/logger.js';
+import pool from '../database/db.js';
 
 const router = Router();
 

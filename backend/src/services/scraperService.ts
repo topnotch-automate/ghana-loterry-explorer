@@ -115,7 +115,7 @@ export class ScraperService {
    *     <ul class="lottery-number-list lottery-number-list2"> - winning numbers
    *     <ul class="lottery-number-list lottery-number-list2 machine-numbers"> - machine numbers (optional)
    */
-  private parseDrawRow(row: cheerio.Element, $: cheerio.CheerioAPI): ScrapedDraw | null {
+  private parseDrawRow(row: any, $: cheerio.CheerioAPI): ScrapedDraw | null {
     try {
       const $row = $(row);
       

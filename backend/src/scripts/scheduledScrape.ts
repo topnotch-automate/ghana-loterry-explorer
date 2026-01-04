@@ -39,10 +39,8 @@ async function scheduledScrape(maxPages: number = 5, dryRun: boolean = false): P
     }
 
     // Scrape draws from theb2b.com
-    const scrapedDraws = await scraperService.scrapeB2B({
-      startPage: 1,
-      maxPages,
-    });
+    const scrapeResult = await scraperService.scrapeB2B(1, maxPages);
+    const scrapedDraws = scrapeResult.draws;
 
     logger.info(`Scraped ${scrapedDraws.length} draws from theb2b.com`);
 

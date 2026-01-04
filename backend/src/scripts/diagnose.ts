@@ -126,7 +126,8 @@ async function diagnose() {
     logger.info('   ✅ ScraperService loaded successfully');
     logger.info('   Testing fetch (first page only)...');
     
-    const testDraws = await scraperService.scrapeB2B(1, 1);
+    const testResult = await scraperService.scrapeB2B(1, 1);
+    const testDraws = testResult.draws;
     if (testDraws.length > 0) {
       logger.info(`   ✅ Successfully scraped ${testDraws.length} draw(s) from page 1`);
       logger.info(`   Sample draw: ${testDraws[0].drawDate} - ${testDraws[0].lottoType}`);
