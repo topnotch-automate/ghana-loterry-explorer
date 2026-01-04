@@ -208,39 +208,6 @@ export class PredictionService {
   }
 
   /**
-   * Check if Python service is available
-   */
-  async healthCheck(): Promise<boolean> {
-    try {
-      const response = await axios.get(`${this.pythonServiceUrl}/health`, {
-        timeout: 5000,
-      });
-      const isHealthy = response.data.status === 'healthy';
-      if (!isHealthy) {
-        logger.warn(`Python service health check returned unhealthy status: ${JSON.stringify(response.data)}`);
-      }
-      return isHealthy;
-    } catch (error: any) {
-      if (axios.isAxiosError(error)) {
-        if (error.code === 'ECONNREFUSED') {
-          logger.error(`Python service connection refused at ${this.pythonServiceUrl}. Is the service running?`);
-        } else if (error.code === 'ETIMEDOUT') {
-          logger.error(`Python service timeout at ${this.pythonServiceUrl}. Service may be slow or unreachable.`);
-        } else {
-          logger.error(`Python service health check failed: ${error.message}`, {
-            url: this.pythonServiceUrl,
-            code: error.code,
-            status: error.response?.status,
-          });
-        }
-      } else {
-        logger.error('Python service health check failed', error);
-      }
-      return false;
-    }
-  }
-
-  /**
    * Generate predictions using the Python oracle service
    */
   async generatePredictions(

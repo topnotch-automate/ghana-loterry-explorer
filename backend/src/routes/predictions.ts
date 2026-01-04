@@ -8,26 +8,7 @@ import pool from '../database/db.js';
 
 const router = Router();
 
-/**
- * GET /api/predictions/health
- * Check if prediction service is available
- */
-router.get('/health', async (req, res, next) => {
-  try {
-    const isHealthy = await predictionService.healthCheck();
-    res.json({
-      success: true,
-      data: {
-        available: isHealthy,
-        message: isHealthy
-          ? 'Prediction service is available'
-          : 'Prediction service is not available',
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-});
+// Health check endpoint removed - health checks are handled by Render's internal system
 
 /**
  * POST /api/predictions/generate
