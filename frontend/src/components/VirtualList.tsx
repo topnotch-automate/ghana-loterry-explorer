@@ -25,8 +25,8 @@ export function VirtualList<T>({
     import('react-window')
       .then((module) => {
         // Try to get FixedSizeList - check multiple possible locations
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const component = 
-          module.FixedSizeList || 
           (module as any).FixedSizeList ||
           (module as any).default?.FixedSizeList || 
           (module as any)['FixedSizeList'];

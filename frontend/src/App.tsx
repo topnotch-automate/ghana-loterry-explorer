@@ -601,7 +601,7 @@ const Navigation: React.FC = () => {
                         {/* Dropdown with all wins and partials (Mobile) */}
                         {isWinsDropdownOpen && allWinsAndPartials.length > 0 && (
                           <div className="mt-2 space-y-2 max-h-64 overflow-y-auto">
-                            {allWinsAndPartials.map((prediction, index) => (
+                            {allWinsAndPartials.map((prediction) => (
                               <Link
                                 key={prediction.id}
                                 to="/dashboard"

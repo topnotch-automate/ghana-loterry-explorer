@@ -1,11 +1,8 @@
 import React, { useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { drawsApi, analyticsApi } from '../api/client';
+import { drawsApi } from '../api/client';
 import { FrequencyChart } from '../components/FrequencyChart';
 import { CoOccurrenceMatrix } from '../components/CoOccurrenceMatrix';
 import { LoadingSpinner } from '../components/LoadingSpinner';
-import { ErrorDisplay } from '../components/ErrorDisplay';
-import { handleApiError } from '../utils/errors';
 import { 
   useFrequencyStats, 
   useHotNumbers, 
@@ -13,11 +10,9 @@ import {
   useSleepingNumbers,
   useCoOccurrence 
 } from '../hooks/useAnalytics';
-import type { FrequencyStats, CoOccurrenceData } from '../types';
 
 export const Analytics: React.FC = () => {
   const [timeframe, setTimeframe] = useState<'30' | '365'>('30');
-  const queryClient = useQueryClient();
 
   // React Query hooks
   const { data: frequency30 = [], isLoading: loading30 } = useFrequencyStats(30);
@@ -268,21 +263,9 @@ export const Analytics: React.FC = () => {
               e.preventDefault();
               e.stopPropagation();
               try {
-                // Directly fetch fresh data from API and update the cache
-                const freshData = await analyticsApi.getCoOccurrence(coOccurrenceParams);
-                // Update the query cache with fresh data
-                queryClient.setQueryData(
-                  ['analytics', 'co-occurrence', coOccurrenceParams.limit, coOccurrenceParams.minCount, coOccurrenceParams.days],
-                  freshData
-                );
+                await refetchCoOccurrence();
               } catch (error) {
                 console.error('Error refreshing co-occurrence data:', error);
-                // If direct fetch fails, try using refetch as fallback
-                try {
-                  await refetchCoOccurrence();
-                } catch (refetchError) {
-                  console.error('Refetch fallback also failed:', refetchError);
-                }
               }
             }}
             disabled={loadingCoOccurrence}

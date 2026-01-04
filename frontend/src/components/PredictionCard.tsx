@@ -80,7 +80,7 @@ const PredictionCardComponent: React.FC<PredictionCardProps> = ({ title, predict
           <div className="flex items-center justify-between text-xs">
             <span className="text-gray-600">{(confDisplay.confValue * 100).toFixed(1)}%</span>
           </div>
-          {confidence.recommendation && (
+          {confidence?.recommendation && (
             <div className="mt-2 pt-2 border-t border-blue-200">
               <p className="text-xs text-gray-600 leading-relaxed">{confidence.recommendation}</p>
             </div>
@@ -132,7 +132,7 @@ export const PredictionCard = React.memo(PredictionCardComponent, (prevProps, ne
     prevProps.confidence.level === nextProps.confidence.level
   );
   
-  return (
+  return Boolean(
     prevProps.title === nextProps.title &&
     prevProps.strategy === nextProps.strategy &&
     JSON.stringify(prevProps.prediction.numbers) === JSON.stringify(nextProps.prediction.numbers) &&

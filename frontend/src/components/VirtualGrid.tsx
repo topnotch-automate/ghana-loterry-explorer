@@ -31,8 +31,8 @@ export function VirtualGrid<T>({
     import('react-window')
       .then((module) => {
         // Try to get FixedSizeGrid - check multiple possible locations
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const component = 
-          module.FixedSizeGrid || 
           (module as any).FixedSizeGrid ||
           (module as any).default?.FixedSizeGrid || 
           (module as any)['FixedSizeGrid'];

@@ -8,7 +8,7 @@ export const useFrequencyStats = (
 ) => {
   return useQuery({
     queryKey: ['frequency', lottoType],
-    queryFn: () => analyticsApi.getFrequencyStats(lottoType),
+    queryFn: () => analyticsApi.getFrequency(lottoType ? { lottoType } : undefined),
     staleTime: 10 * 60 * 1000, // 10 minutes - frequency stats don't change often
     ...options,
   });

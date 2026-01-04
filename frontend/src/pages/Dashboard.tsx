@@ -8,10 +8,9 @@ import { FrequencyChart } from '../components/FrequencyChart';
 import { DrawModal } from '../components/DrawModal';
 import { ErrorDisplay } from '../components/ErrorDisplay';
 import { DashboardSkeleton } from '../components/SkeletonLoader';
-import { VirtualList } from '../components/VirtualList';
 import { handleApiError } from '../utils/errors';
 import { useSavedPredictions, useStrategyPerformance, useCheckPredictions } from '../hooks/usePredictions';
-import type { Draw, FrequencyStats, SavedPrediction, StrategyPerformance, TwoSureThreeDirect } from '../types';
+import type { Draw, FrequencyStats, TwoSureThreeDirect } from '../types';
 
 // Interface for special predictions (Two Sure and Three Direct)
 interface SpecialPredictions {
@@ -49,8 +48,7 @@ export const Dashboard: React.FC = () => {
   } = useSavedPredictions({ enabled: isAuthenticated });
   
   const { 
-    data: strategyPerformance = null, 
-    isLoading: loadingStrategyPerformance 
+    data: strategyPerformance = null
   } = useStrategyPerformance({ enabled: isAuthenticated });
   
   const { 

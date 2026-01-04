@@ -13,8 +13,7 @@ export const Search: React.FC = () => {
   const [selectedDraw, setSelectedDraw] = useState<SearchResult | null>(null);
   const [queryNumbers, setQueryNumbers] = useState<number[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
-  const [searchMode, setSearchMode] = useState<SearchMode>('any');
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchMode, setSearchMode] = useState<SearchMode>('partial');
 
   // React Query hooks
   const { 
@@ -40,7 +39,6 @@ export const Search: React.FC = () => {
   const results = queryNumbers.length > 0 ? searchResults : allDraws;
 
   const handleSearch = (query: string, mode: SearchMode) => {
-    setSearchQuery(query);
     setSearchMode(mode);
     
     if (!query.trim()) {
@@ -191,7 +189,7 @@ export const Search: React.FC = () => {
           ) : (
             <ResponsiveVirtualList
               items={results}
-              renderItem={(draw, index) => (
+              renderItem={(draw) => (
                 <DrawCard
                   draw={draw}
                   queryNumbers={queryNumbers}
